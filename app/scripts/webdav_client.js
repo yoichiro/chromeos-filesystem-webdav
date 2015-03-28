@@ -36,7 +36,7 @@
     WebDavClient.prototype.getRootPath = function() {
         return this.rootPath_;
     };
-
+    
     // options: onSuccess, onError
     WebDavClient.prototype.checkRootPath = function(options) {
         var headers = createHeaders.call(this, {
@@ -45,7 +45,7 @@
         });
         $.ajax({
             type: "PROPFIND",
-            url: this.getUrl(),
+            url: appendTimestamp.call(this, this.getUrl()),
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
@@ -66,7 +66,7 @@
         });
         $.ajax({
             type: "PROPFIND",
-            url: this.getUrl() + options.path,
+            url: appendTimestamp.call(this, this.getUrl() + options.path),
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
@@ -88,7 +88,7 @@
         });
         $.ajax({
             type: "PROPFIND",
-            url: this.getUrl() + options.path,
+            url: appendTimestamp.call(this, this.getUrl() + options.path),
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
@@ -161,7 +161,7 @@
         });
         $.ajax({
             type: "GET",
-            url: this.getUrl() + options.path,
+            url: appendTimestamp.call(this, this.getUrl() + options.path),
             headers: headers,
             dataType: "binary",
             responseType: "arraybuffer"
@@ -288,7 +288,7 @@
         var headers = createHeaders.call(this, {});
         $.ajax({
             type: "GET",
-            url: this.getUrl() + options.path,
+            url: appendTimestamp.call(this, this.getUrl() + options.path),
             headers: headers,
             dataType: "binary",
             responseType: "arraybuffer"
@@ -342,7 +342,9 @@
 
     // options: filePath, data
     var sendSimpleUpload = function(options, successCallback, errorCallback) {
-        var headers = createHeaders.call(this, {});
+        var headers = createHeaders.call(this, {
+            "Content-Type": "application/octet-stream"
+        });
         $.ajax({
             type: "PUT",
             url: this.getUrl() + options.filePath,
@@ -358,9 +360,6 @@
     };
 
     var initializeJQueryAjaxBinaryHandler = function() {
-        $.ajaxSetup({
-            cache: false
-        });
         $.ajaxTransport("+binary", function(options, originalOptions, jqXHR){
             if (window.FormData &&
                 ((options.dataType && (options.dataType === 'binary')) ||
@@ -457,6 +456,10 @@
             metadata.mimeType = contentType;
         }
         return metadata;
+    };
+
+    var appendTimestamp = function(url) {
+        return url + "?_=" + (new Date()).getTime();
     };
 
     // Export
