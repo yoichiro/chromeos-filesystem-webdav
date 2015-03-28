@@ -358,6 +358,9 @@
     };
 
     var initializeJQueryAjaxBinaryHandler = function() {
+        $.ajaxSetup({
+            cache: false
+        });
         $.ajaxTransport("+binary", function(options, originalOptions, jqXHR){
             if (window.FormData &&
                 ((options.dataType && (options.dataType === 'binary')) ||
