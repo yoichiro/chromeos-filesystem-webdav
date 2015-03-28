@@ -2,41 +2,55 @@
 
 (function() {
 
-    var dropbox_fs_ = new DropboxFS();
+    var webdav_fs_ = new WebDavFS();
 
     chrome.app.runtime.onLaunched.addListener(function() {
         chrome.app.window.create("window.html", {
             outerBounds: {
-                width: 400,
-                height: 220
+                width: 800,
+                height: 470
             },
             resizable: false
         });
     });
 
-    var mount = function(successCallback, errorCallback) {
-        dropbox_fs_.mount(function() {
-            successCallback();
-        }, function(reason) {
-            errorCallback(reason);
+    var doMount = function(request, sendResponse) {
+        webdav_fs_.checkAlreadyMounted(request.url, request.username, function(exists) {
+            if (exists) {
+                sendResponse({
+                    type: "error",
+                    error: "Already mounted"
+                });
+            } else {
+                var options = {
+                    url: request.url,
+                    authType: request.authType,
+                    username: request.username,
+                    password: request.password,
+                    onSuccess: function() {
+                        sendResponse({
+                            type: "mounted",
+                            success: true
+                        });
+                    },
+                    onError: function(reason) {
+                        sendResponse({
+                            type: "error",
+                            success: false,
+                            error: reason
+                        });
+                    }
+                };
+                webdav_fs_.mount(options);
+            }
         });
     };
 
     chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+        console.log(request);
         switch(request.type) {
         case "mount":
-            mount(function() {
-                sendResponse({
-                    type: "mount",
-                    success: true
-                });
-            }, function(reason) {
-                sendResponse({
-                    type: "mount",
-                    success: false,
-                    error: reason
-                });
-            });
+            doMount(request, sendResponse);
             break;
         default:
             var message;
