@@ -2,6 +2,12 @@
 
 WebDAV File System provides you an ability to access to your WebDAV storage directly from the Files app.
 
+<a target="_blank" href="https://chrome.google.com/webstore/detail/webdav-file-system/hmckflbfniicjijmdoffagjkpnjgbieh">
+  Go to WebDAV File System page on Chrome WebStore
+</a>
+
+<img src="https://raw.githubusercontent.com/yoichiro/chromeos-filesystem-webdav/master/docs/screenshot.png">
+
 ## How to build
 
 ```
