@@ -2,239 +2,431 @@
 
 (function() {
 
-    // Constants
-
-    var FILE_SYSTEM_ID = "dropboxfs";
-    var FILE_SYSTEM_NAME = "Dropbox";
-
     // Constructor
 
-    var DropboxFS = function() {
-        this.dropbox_client_ = null;
+    var WebDavFS = function() {
+        this.webDavClientMap_ = {};
         this.opened_files_ = {};
-        this.metadata_cache_ = null;
+        this.metadataCache_ = {};
         assignEventHandlers.call(this);
     };
 
     // Public functions
 
-    DropboxFS.prototype.mount = function(successCallback, errorCallback) {
-        chrome.fileSystemProvider.getAll(function(fileSystems) {
-            var mounted = false;
-            for (var i = 0; i < fileSystems.length; i++) {
-                if (fileSystems[i].fileSystemId === FILE_SYSTEM_ID) {
-                    mounted = true;
-                    break;
-                }
-            }
-            if (mounted) {
-                errorCallback("ALREADY_MOUNTED");
-            } else {
-                this.dropbox_client_ = new DropboxClient(this);
-                this.dropbox_client_.authorize(function() {
-                    chrome.fileSystemProvider.mount({
-                        fileSystemId: FILE_SYSTEM_ID,
-                        displayName: FILE_SYSTEM_NAME,
-                        writable: true
-                    }, function() {
-                        var lastError = chrome.runtime.lastError;
-                        if (lastError) {
-                            this.dropbox_client_ = null;
-                            errorCallback(lastError);
-                        } else {
-                            var config = {
-                                accessToken: this.dropbox_client_.getAccessToken()
-                            };
-                            chrome.storage.local.set(config, function() {
-                                successCallback();
-                            });
-                        }
+    WebDavFS.prototype.mount = function(options) {
+        var fileSystemId = createFileSystemID.call(this, options.url, options.username);
+        var webDavClient = new WebDavClient(
+            this, options.url, options.authType, options.username, options.password);
+        webDavClient.checkRootPath({
+            onSuccess: function() {
+                this.webDavClientMap_[fileSystemId] = webDavClient;
+                doMount.call(
+                    this,
+                    webDavClient.getUrl(),
+                    webDavClient.getAuthType(),
+                    webDavClient.getUsername(),
+                    webDavClient.getPassword(),
+                    function() {
+                        options.onSuccess();
                     }.bind(this));
-                }.bind(this), function(reason) {
-                    console.log(reason);
-                    errorCallback(reason);
-                }.bind(this));
+            }.bind(this),
+            onError: function(error) {
+                options.onError(error);
+            }.bind(this)
+        });
+    };
+
+    WebDavFS.prototype.resume = function(fileSystemId, onSuccess, onError) {
+        console.log("resume - start");
+        getMountedCredential.call(this, fileSystemId, function(credential) {
+            if (credential) {
+                this.mount({
+                    url: credential.url,
+                    authType: credential.authType,
+                    username: credential.username,
+                    password: credential.password,
+                    onSuccess: function() {
+                        onSuccess();
+                    }.bind(this)
+                });
+            } else {
+                onError("Credential[" + fileSystemId + "] not found");
             }
         }.bind(this));
     };
 
-    DropboxFS.prototype.resume = function(successCallback, errorCallback) {
-        if (!this.dropbox_client_) {
-            chrome.storage.local.get("accessToken", function(items) {
-                var accessToken = items.accessToken;
-                if (accessToken) {
-                    this.dropbox_client_ = new DropboxClient(this);
-                    this.dropbox_client_.setAccessToken(accessToken);
-                    successCallback();
-                } else {
-                    errorCallback("ACCESS_TOKEN_NOT_FOUND");
-                }
-            }.bind(this));
-        } else {
-            successCallback();
-        }
+    WebDavFS.prototype.onUnmountRequested = function(options, successCallback, errorCallback) {
+        console.log("onUnmountRequested");
+        console.log(options);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        doUnmount.call(this, webDavClient, options.requestId, successCallback);
     };
 
-    DropboxFS.prototype.onUnmountRequested = function(options, successCallback, errorCallback) {
-        this.doUnmount(successCallback);
-    };
-
-    DropboxFS.prototype.onReadDirectoryRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onReadDirectoryRequested = function(options, successCallback, errorCallback) {
         console.log("onReadDirectoryRequested");
-        this.dropbox_client_.readDirectory(options.directoryPath, function(entryMetadataList) {
-            var cache = getMetadataCache.call(this);
-            cache.put(options.directoryPath, entryMetadataList);
-            successCallback(entryMetadataList, false);
-        }.bind(this), errorCallback);
+        console.log(options);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.readDirectory({
+            path: options.directoryPath,
+            onSuccess: function(result) {
+                console.log(result);
+                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
+                metadataCache.put(options.directoryPath, result.metadataList);
+                successCallback(result.metadataList, false);
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onGetMetadataRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onGetMetadataRequested = function(options, successCallback, errorCallback) {
         console.log("onGetMetadataRequested: thumbnail=" + options.thumbnail);
         console.log(options);
-        if (options.thumbnail) {
-            this.dropbox_client_.getMetadata(
-                options.entryPath, true, function(entryMetadata) {
-                    successCallback(entryMetadata);
-                }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        var metadataCache = getMetadataCache.call(this, options.fileSystemId);
+        var cache = metadataCache.get(options.entryPath);
+        if (cache.directoryExists && cache.fileExists) {
+            successCallback(cache.metadata);
         } else {
-            var metadataCache = getMetadataCache.call(this);
-            var cache = metadataCache.get(options.entryPath);
-            if (cache.directoryExists && cache.fileExists) {
-                successCallback(cache.metadata);
-            } else {
-                this.dropbox_client_.getMetadata(
-                    options.entryPath, false, function(entryMetadata) {
-                        successCallback(entryMetadata);
-                    }.bind(this), errorCallback);
-            }
+            webDavClient.getMetadata({
+                path: options.entryPath,
+                onSuccess: function(result) {
+                    console.log(result);
+                    successCallback(result.metadata);
+                }.bind(this),
+                onError: function(reason) {
+                    console.log(reason);
+                    if (reason === "NOT_FOUND") {
+                        errorCallback("NOT_FOUND");
+                    } else {
+                        errorCallback("FAILED");
+                    }
+                }.bind(this)
+            });
         }
     };
 
-    DropboxFS.prototype.onOpenFileRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onOpenFileRequested = function(options, successCallback, errorCallback) {
         console.log("onOpenFileRequested");
         console.log(options);
-        this.dropbox_client_.openFile(options.filePath, options.requestId, options.mode, function() {
-            this.opened_files_[options.requestId] = options.filePath;
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.openFile(options.filePath, options.requestId, options.mode, function() {
+            var openedFiles = getOpenedFiles.call(this, options.fileSystemId);
+            openedFiles[options.requestId] = options.filePath;
             successCallback();
         }.bind(this), errorCallback);
     };
 
-    DropboxFS.prototype.onReadFileRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onReadFileRequested = function(options, successCallback, errorCallback) {
         console.log("onReadFileRequested - start");
         console.log(options);
-        var filePath = this.opened_files_[options.openRequestId];
-        this.dropbox_client_.readFile(
-            filePath, options.offset, options.length, function(data, hasMore) {
-                successCallback(data, hasMore);
-                console.log("onReadFileRequested - end");
-            }.bind(this), errorCallback);
+        var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.readFile({
+            path: filePath,
+            offset: options.offset,
+            length: options.length,
+            onSuccess: function(result) {
+                console.log(result);
+                successCallback(result.data, result.hasMore);
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onCloseFileRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onCloseFileRequested = function(options, successCallback, errorCallback) {
         console.log("onCloseFileRequested");
-        var filePath = this.opened_files_[options.openRequestId];
-        this.dropbox_client_.closeFile(filePath, options.openRequestId, function() {
-            delete this.opened_files_[options.openRequestId];
-            successCallback();
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
+        webDavClient.closeFile({
+            path: filePath,
+            openRequestId: options.openRequestId,
+            onSuccess: function() {
+                delete this.opened_files_[options.openRequestId];
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }.bind(this)
+        });
     };
 
-    DropboxFS.prototype.onCreateDirectoryRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onCreateDirectoryRequested = function(options, successCallback, errorCallback) {
         console.log("onCreateDirectoryRequested");
         console.log(options);
-        this.dropbox_client_.createDirectory(options.directoryPath, function() {
-            successCallback();
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.createDirectory({
+            path: options.directoryPath,
+            onSuccess: function() {
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onDeleteEntryRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onDeleteEntryRequested = function(options, successCallback, errorCallback) {
         console.log("onDeleteEntryRequested");
         console.log(options);
-        this.dropbox_client_.deleteEntry(options.entryPath, function() {
-            var metadataCache = getMetadataCache.call(this);
-            metadataCache.remove(options.entryPath);
-            successCallback();
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.deleteEntry({
+            path: options.entryPath,
+            onSuccess: function() {
+                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
+                metadataCache.remove(options.entryPath);
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onMoveEntryRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onMoveEntryRequested = function(options, successCallback, errorCallback) {
         console.log("onMoveEntryRequested");
         console.log(options);
-        this.dropbox_client_.moveEntry(options.sourcePath, options.targetPath, function() {
-            var metadataCache = getMetadataCache.call(this);
-            metadataCache.remove(options.sourcePath);
-            metadataCache.remove(options.targetPath);
-            successCallback();
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.moveEntry({
+            sourcePath: options.sourcePath,
+            targetPath: options.targetPath,
+            onSuccess: function() {
+                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
+                metadataCache.remove(options.sourcePath);
+                metadataCache.remove(options.targetPath);
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onCopyEntryRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onCopyEntryRequested = function(options, successCallback, errorCallback) {
         console.log("onCopyEntryRequested");
         console.log(options);
-        this.dropbox_client_.copyEntry(options.sourcePath, options.targetPath, function() {
-            var metadataCache = getMetadataCache.call(this);
-            metadataCache.remove(options.sourcePath);
-            metadataCache.remove(options.targetPath);
-            successCallback();
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.copyEntry({
+            sourcePath: options.sourcePath,
+            targetPath: options.targetPath,
+            onSuccess: function() {
+                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
+                metadataCache.remove(options.sourcePath);
+                metadataCache.remove(options.targetPath);
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onWriteFileRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onWriteFileRequested = function(options, successCallback, errorCallback) {
         console.log("onWriteFileRequested");
         console.log(options);
-        var filePath = this.opened_files_[options.openRequestId];
-        this.dropbox_client_.writeFile(filePath, options.data, options.offset, options.openRequestId, function() {
-            successCallback();
-        }.bind(this), errorCallback);
+        var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.writeFile({
+            path: filePath,
+            offset: options.offset,
+            data: options.data,
+            openRequestId: options.openRequestId,
+            onSuccess: function() {
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onTruncateRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onTruncateRequested = function(options, successCallback, errorCallback) {
         console.log("onTruncateRequested");
         console.log(options);
-        this.dropbox_client_.truncate(options.filePath, options.length, function() {
-            console.log("onTruncateRequested - done");
-            successCallback(false);
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.truncate({
+            path: options.filePath,
+            length: options.length,
+            onSuccess: function() {
+                successCallback(false);
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.onCreateFileRequested = function(options, successCallback, errorCallback) {
+    WebDavFS.prototype.onCreateFileRequested = function(options, successCallback, errorCallback) {
         console.log("onCreateFileRequested");
         console.log(options);
-        this.dropbox_client_.createFile(options.filePath, function() {
-            var metadataCache = getMetadataCache.call(this);
-            metadataCache.remove(options.filePath);
-            successCallback();
-        }.bind(this), errorCallback);
+        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        webDavClient.createFile({
+            path: options.filePath,
+            onSuccess: function() {
+                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
+                metadataCache.remove(options.filePath);
+                successCallback();
+            }.bind(this),
+            onError: function(reason) {
+                console.log(reason);
+                errorCallback("FAILED");
+            }
+        });
     };
 
-    DropboxFS.prototype.doUnmount = function(successCallback) {
-        var unmount = function() {
-            chrome.fileSystemProvider.unmount({
-                fileSystemId: FILE_SYSTEM_ID
-            }, function() {
-                chrome.storage.local.remove("accessToken", function() {
-                    successCallback();
-                });
-            }.bind(this));
-        };
-        this.dropbox_client_.unauthorize(function() {
-            unmount(successCallback);
-        }.bind(this), function(reason) {
-            console.log(reason);
-            unmount(successCallback);
+    WebDavFS.prototype.checkAlreadyMounted = function(url, username, callback) {
+        var fileSystemId = createFileSystemID.call(this, url, username);
+        chrome.fileSystemProvider.getAll(function(fileSystems) {
+            for (var i = 0; i < fileSystems.length; i++) {
+                if (fileSystems[i].fileSystemId === fileSystemId) {
+                    callback(true);
+                    return;
+                }
+            }
+            callback(false);
         }.bind(this));
     };
 
     // Private functions
 
+    var doMount = function(url, authType, username, password, callback) {
+        this.checkAlreadyMounted(url, username, function(exists) {
+            if (!exists) {
+                var fileSystemId = createFileSystemID.call(this, url, username);
+                var displayName = url;
+                displayName += " (" + username + ")";
+                registerMountedCredential(
+                    url, authType, username, password,
+                    function() {
+                        chrome.fileSystemProvider.mount({
+                            fileSystemId: fileSystemId,
+                            displayName: displayName,
+                            writable: true
+                        }, function() {
+                            callback();
+                        }.bind(this));
+                    }.bind(this));
+            } else {
+                callback();
+            }
+        }.bind(this));
+    };
+
+    var doUnmount = function(webDavClient, requestId, successCallback) {
+        console.log("doUnmount");
+        _doUnmount.call(
+            this,
+            webDavClient.getUrl(),
+            webDavClient.getUsername(),
+            function() {
+                successCallback();
+            }.bind(this));
+    };
+
+    var _doUnmount = function(url, username, successCallback) {
+        console.log("_doUnmount");
+        unregisterMountedCredential.call(
+            this, url, username,
+            function() {
+                var fileSystemId = createFileSystemID.call(this, url, username);
+                console.log(fileSystemId);
+                chrome.fileSystemProvider.unmount({
+                    fileSystemId: fileSystemId
+                }, function() {
+                    delete this.webDavClientMap_[fileSystemId];
+                    deleteMetadataCache.call(this, fileSystemId);
+                    successCallback();
+                }.bind(this));
+            }.bind(this));
+    };
+
+    var registerMountedCredential = function(
+            url, authType, username, password, callback) {
+        var fileSystemId = createFileSystemID.call(this, url, username);
+        chrome.storage.local.get("mountedCredentials", function(items) {
+            var mountedCredentials = items.mountedCredentials || {};
+            mountedCredentials[fileSystemId] = {
+                url: url,
+                authType: authType,
+                username: username,
+                password: password
+            };
+            chrome.storage.local.set({
+                mountedCredentials: mountedCredentials
+            }, function() {
+                callback();
+            }.bind(this));
+        }.bind(this));
+    };
+
+    var unregisterMountedCredential = function(url, username, callback) {
+        var fileSystemId = createFileSystemID.call(this, url, username);
+        chrome.storage.local.get("mountedCredentials", function(items) {
+            var mountedCredentials = items.mountedCredentials || {};
+            delete mountedCredentials[fileSystemId];
+            chrome.storage.local.set({
+                mountedCredentials: mountedCredentials
+            }, function() {
+                callback();
+            }.bind(this));
+        }.bind(this));
+    };
+
+    var getMountedCredential = function(fileSystemId, callback) {
+        chrome.storage.local.get("mountedCredentials", function(items) {
+            var mountedCredentials = items.mountedCredentials || {};
+            var credential = mountedCredentials[fileSystemId];
+            callback(credential);
+        }.bind(this));
+    };
+
+    var createFileSystemID = function(url, username) {
+        var id = "webdavfs://" + username + "/" + url;
+        return id;
+    };
+
     var createEventHandler = function(callback) {
         return function(options, successCallback, errorCallback) {
-            if (!this.dropbox_client_) {
-                this.resume(function() {
+            var fileSystemId = options.fileSystemId;
+            var webDavClient = getWebDavClient.call(this, fileSystemId);
+            if (!webDavClient) {
+                this.resume(fileSystemId, function() {
                     callback(options, successCallback, errorCallback);
                 }.bind(this), function(reason) {
-                    console.log("resume failed");
-                    errorCallback("FAILED");
+                    console.log("resume failed: " + reason);
+                    chrome.notifications.create("", {
+                        type: "basic",
+                        title: "WebDAV File System",
+                        message: "Resuming connection failed. Unmount.",
+                        iconUrl: "/images/48.png"
+                    }, function(notificationId) {
+                    }.bind(this));
+                    getMountedCredential.call(this, fileSystemId, function(credential) {
+                        if (credential) {
+                            _doUnmount.call(
+                                this,
+                                credential.url,
+                                credential.username,
+                                function() {
+                                    errorCallback("FAILED");
+                                }.bind(this));
+                        } else {
+                            console.log("Credential for [" + fileSystemId + "] not found.");
+                            errorCallback("FAILED");
+                        }
+                    }.bind(this));
                 }.bind(this));
             } else {
                 callback(options, successCallback, errorCallback);
@@ -243,97 +435,102 @@
     };
 
     var assignEventHandlers = function() {
-        console.log("Start: assignEventHandlers");
         chrome.fileSystemProvider.onUnmountRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
+            function(options, successCallback, errorCallback) { // Unmount immediately
+                var fileSystemId = options.fileSystemId;
+                var webDavClient = getWebDavClient.call(this, fileSystemId);
+                if (!webDavClient) {
+                    this.resume(fileSystemId, function() {
+                        this.onUnmountRequested(options, successCallback, errorCallback);
+                    }.bind(this), function(reason) {
+                        console.log("resume failed: " + reason);
+                        errorCallback("FAILED");
+                    }.bind(this));
+                } else {
                     this.onUnmountRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+                }
+            }.bind(this));
         chrome.fileSystemProvider.onReadDirectoryRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onReadDirectoryRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onReadDirectoryRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onGetMetadataRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onGetMetadataRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onGetMetadataRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onOpenFileRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onOpenFileRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onOpenFileRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onReadFileRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onReadFileRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onReadFileRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onCloseFileRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onCloseFileRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onCloseFileRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onCreateDirectoryRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onCreateDirectoryRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onCreateDirectoryRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onDeleteEntryRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onDeleteEntryRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onDeleteEntryRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onMoveEntryRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onMoveEntryRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onMoveEntryRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onCopyEntryRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onCopyEntryRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onCopyEntryRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onWriteFileRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onWriteFileRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onWriteFileRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onTruncateRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onTruncateRequested(options, successCallback, errorCallback);
-                }.bind(this)));
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onTruncateRequested(options, successCallback, errorCallback);
+            }.bind(this)));
         chrome.fileSystemProvider.onCreateFileRequested.addListener(
-            createEventHandler.call(
-                this,
-                function(options, successCallback, errorCallback) {
-                    this.onCreateFileRequested(options, successCallback, errorCallback);
-                }.bind(this)));
-        console.log("End: assignEventHandlers");
+            createEventHandler.call(this, function(options, successCallback, errorCallback) {
+                this.onCreateFileRequested(options, successCallback, errorCallback);
+            }.bind(this)));
     };
 
-    var getMetadataCache = function() {
-        if (!this.metadata_cache_) {
-            this.metadata_cache_ = new MetadataCache();
+    var getWebDavClient = function(fileSystemID) {
+        var webDavClient = this.webDavClientMap_[fileSystemID];
+        return webDavClient;
+    };
+
+    var getOpenedFiles = function(fileSystemId) {
+        var openedFiles = this.opened_files_[fileSystemId];
+        if (!openedFiles) {
+            openedFiles = {};
+            this.opened_files_[fileSystemId] = openedFiles;
         }
-        return this.metadata_cache_;
+        return openedFiles;
+    };
+
+    var getMetadataCache = function(fileSystemId) {
+        var metadataCache = this.metadataCache_[fileSystemId];
+        if (!metadataCache) {
+            metadataCache = new MetadataCache();
+            this.metadataCache_[fileSystemId] = metadataCache;
+            console.log("getMetadataCache: Created. " + fileSystemId);
+        }
+        return metadataCache;
+    };
+
+    var deleteMetadataCache = function(fileSystemId) {
+        console.log("deleteMetadataCache: " + fileSystemId);
+        delete this.metadataCache_[fileSystemId];
     };
 
     // Export
 
-    window.DropboxFS = DropboxFS;
+    window.WebDavFS = WebDavFS;
 
 })();

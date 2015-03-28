@@ -1,23 +1,27 @@
 {
   "appName": {
     "message": "WebDAV File System",
-    "description": "Application name"
+    "description": "The name of the application"
+  },
+  "appDescription": {
+    "message": "Access a WebDAV server directly from the Files app.",
+    "description": "The description of the application"
   },
   "shortName": {
     "message": "WebDAV",
-    "description": "Application short name"
-  },
-  "appDescription": {
-    "message": "This application provides File System for your WebDAV storage.",
-    "description": "Application description"
+    "description": "The short name of the application"
   },
   "mountHeader": {
-    "message": "Mount your WebDAV",
+    "message": "Mount a new WebDAV server",
     "description": "Header describing the server mount form."
   },
   "mount": {
     "message": "Mount",
     "description": "Label for a button that triggers the mount action."
+  },
+  "keep": {
+    "message": "Keep",
+    "description": "Label for a button that triggers the keep action."
   },
   "mountAttempt": {
     "message": "Attempting to mount instance...",
@@ -30,5 +34,37 @@
   "mountFail": {
     "message": "Failed to mount.",
     "description": "Popup notifcation that informs the user that the system failed to mount a new instance with the credentials they provided."
+  },
+  "url": {
+    "message": "URL",
+    "description": "The server's URL"
+  },
+  "authTypeNone": {
+    "message": "None",
+    "description": "The authentication type: none"
+  },
+  "authTypeBasic": {
+    "message": "Basic",
+    "description": "The authentication type: Basic"
+  },
+  "authTypeDigest": {
+    "message": "Digest",
+    "description": "The authentication type: Digest"
+  },
+  "username": {
+    "message": "User Name",
+    "description": "The user name"
+  },
+  "password": {
+    "message": "Password",
+    "description": "The user password"
+  },
+  "keepPasswordYes": {
+    "message": "Yes",
+    "description": "Keep password"
+  },
+  "keepPasswordNo": {
+    "message": "No",
+    "description": "Don't keep password"
   }
 }
