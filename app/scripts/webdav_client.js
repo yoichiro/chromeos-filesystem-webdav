@@ -16,7 +16,7 @@
     };
 
     // Public functions
-    
+
     WebDavClient.prototype.getUrl = function() {
         return this.url_;
     };
@@ -32,11 +32,11 @@
     WebDavClient.prototype.getPassword = function() {
         return this.password_;
     };
-    
+
     WebDavClient.prototype.getRootPath = function() {
         return this.rootPath_;
     };
-    
+
     // options: onSuccess, onError
     WebDavClient.prototype.checkRootPath = function(options) {
         var headers = createHeaders.call(this, {
@@ -79,7 +79,7 @@
             handleError.call(this, error, options.onSuccess, options.onError);
         }.bind(this));
     };
-    
+
     // options: path, onSuccess, onError
     WebDavClient.prototype.readDirectory = function(options) {
         var headers = createHeaders.call(this, {
@@ -107,7 +107,7 @@
             });
         }.bind(this)).fail(function(error) {
             console.log(error);
-            handleError.call(this, error, onSuccess, onError);
+            handleError.call(this, error, options.onSuccess, options.onError);
         }.bind(this));
     };
 
@@ -327,7 +327,7 @@
         }
         return headers;
     };
-    
+
     var handleError = function(error, onSuccess, onError) {
         console.log(error);
         var status = Number(error.status);
@@ -339,7 +339,7 @@
             onError("FAILED");
         }
     };
-    
+
     // options: filePath, data
     var sendSimpleUpload = function(options, successCallback, errorCallback) {
         var headers = createHeaders.call(this, {});
@@ -404,7 +404,7 @@
             return name;
         }
     };
-    
+
     var removeLastSlash = function(source) {
         if (source.lastIndexOf("/") === (source.length - 1)) {
             return source.substring(0, source.length - 1);
@@ -422,19 +422,19 @@
             return "";
         }
     };
-    
+
     var elements = function(element, selector) {
         var namespace = "DAV:";
         var elements = element.getElementsByTagNameNS(namespace, selector);
         return elements;
     };
-    
+
     var exists = function(element, selector) {
         var namespace = "DAV:";
         var elements = element.getElementsByTagNameNS(namespace, selector);
         return elements.length > 0;
     };
-    
+
     var createMetadata = function(element) {
         var name = getNameFromPath.call(this, select.call(this, element, "href"));
         var contentType = select.call(this, element, "getcontenttype");
@@ -454,7 +454,7 @@
             metadata.mimeType = contentType;
         }
         return metadata;
-    }
+    };
 
     // Export
 
