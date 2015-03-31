@@ -45,7 +45,7 @@
         });
         $.ajax({
             type: "PROPFIND",
-            url: appendTimestamp.call(this, this.getUrl()),
+            url: this.getUrl(),
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
@@ -66,7 +66,7 @@
         });
         $.ajax({
             type: "PROPFIND",
-            url: appendTimestamp.call(this, this.getUrl() + options.path),
+            url: this.getUrl() + encodePath(options.path),
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
@@ -88,7 +88,7 @@
         });
         $.ajax({
             type: "PROPFIND",
-            url: appendTimestamp.call(this, this.getUrl() + options.path),
+            url: this.getUrl() + encodePath(options.path),
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
@@ -161,7 +161,7 @@
         });
         $.ajax({
             type: "GET",
-            url: appendTimestamp.call(this, this.getUrl() + options.path),
+            url: this.getUrl() + encodePath(options.path),
             headers: headers,
             dataType: "binary",
             responseType: "arraybuffer"
@@ -181,7 +181,7 @@
         var headers = createHeaders.call(this, {});
         $.ajax({
             type: "MKCOL",
-            url: this.getUrl() + options.path + "/",
+            url: this.getUrl() + encodePath(options.path) + "/",
             headers: headers
         }).done(function(result) {
             options.onSuccess();
@@ -195,7 +195,7 @@
         var headers = createHeaders.call(this, {});
         $.ajax({
             type: "DELETE",
-            url: this.getUrl() + options.path,
+            url: this.getUrl() + encodePath(options.path),
             headers: headers
         }).done(function(result) {
             options.onSuccess();
@@ -207,12 +207,12 @@
     // options: sourcePath, targetPath, onSuccess, onError
     WebDavClient.prototype.moveEntry = function(options) {
         var headers = createHeaders.call(this, {
-            "Destination": this.getUrl() + options.targetPath,
+            "Destination": this.getUrl() + encodePath(options.targetPath),
             "Overwrite": "F"
         });
         $.ajax({
             type: "MOVE",
-            url: this.getUrl() + options.sourcePath,
+            url: this.getUrl() + encodePath(options.sourcePath),
             headers: headers
         }).done(function(result) {
             options.onSuccess();
@@ -224,12 +224,12 @@
     // options: sourcePath, targetPath, onSuccess, onError
     WebDavClient.prototype.copyEntry = function(options) {
         var headers = createHeaders.call(this, {
-            "Destination": this.getUrl() + options.targetPath,
+            "Destination": this.getUrl() + encodePath(options.targetPath),
             "Overwrite": "F"
         });
         $.ajax({
             type: "COPY",
-            url: this.getUrl() + options.sourcePath,
+            url: this.getUrl() + encodePath(options.sourcePath),
             headers: headers
         }).done(function(result) {
             options.onSuccess();
@@ -243,7 +243,7 @@
         var headers = createHeaders.call(this, {});
         $.ajax({
             type: "PUT",
-            url: this.getUrl() + options.path,
+            url: this.getUrl() + encodePath(options.path),
             headers: headers,
             processData: false,
             data: new ArrayBuffer()
@@ -288,7 +288,7 @@
         var headers = createHeaders.call(this, {});
         $.ajax({
             type: "GET",
-            url: appendTimestamp.call(this, this.getUrl() + options.path),
+            url: this.getUrl() + encodePath(options.path),
             headers: headers,
             dataType: "binary",
             responseType: "arraybuffer"
@@ -347,7 +347,7 @@
         });
         $.ajax({
             type: "PUT",
-            url: this.getUrl() + options.filePath,
+            url: this.getUrl() + encodePath(options.filePath),
             headers: headers,
             processData: false,
             data: options.data
@@ -438,7 +438,7 @@
     };
 
     var createMetadata = function(element) {
-        var name = getNameFromPath.call(this, select.call(this, element, "href"));
+        var name = decodeURIComponent(getNameFromPath.call(this, select.call(this, element, "href")));
         var contentType = select.call(this, element, "getcontenttype");
         var isDirectory = exists.call(this, element, "collection");
         var modificationTime = new Date(select.call(this, element, "getlastmodified"));
@@ -457,9 +457,14 @@
         }
         return metadata;
     };
-
-    var appendTimestamp = function(url) {
-        return url + "?_=" + (new Date()).getTime();
+    
+    var encodePath = function(path) {
+        var result = [];
+        var split = path.split("/");
+        for (var i = 0; i < split.length; i++) {
+            result.push(encodeURIComponent(split[i]));
+        }
+        return "/" + result.join("/");
     };
 
     // Export
