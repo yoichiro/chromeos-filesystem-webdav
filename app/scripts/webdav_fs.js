@@ -47,6 +47,9 @@
                     password: credential.password,
                     onSuccess: function() {
                         onSuccess();
+                    }.bind(this),
+                    onError: function(reason) {
+                        onError(reason);
                     }.bind(this)
                 });
             } else {
@@ -409,23 +412,10 @@
                     chrome.notifications.create("", {
                         type: "basic",
                         title: "WebDAV File System",
-                        message: "Resuming connection failed. Unmount.",
-                        iconUrl: "/images/48.png"
+                        message: "Resuming connection failed.",
+                        iconUrl: "/icons/48.png"
                     }, function(notificationId) {
-                    }.bind(this));
-                    getMountedCredential.call(this, fileSystemId, function(credential) {
-                        if (credential) {
-                            _doUnmount.call(
-                                this,
-                                credential.url,
-                                credential.username,
-                                function() {
-                                    errorCallback("FAILED");
-                                }.bind(this));
-                        } else {
-                            console.log("Credential for [" + fileSystemId + "] not found.");
-                            errorCallback("FAILED");
-                        }
+                        errorCallback("FAILED");
                     }.bind(this));
                 }.bind(this));
             } else {
