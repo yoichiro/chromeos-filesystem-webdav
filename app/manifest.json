@@ -3,7 +3,7 @@
   "name": "__MSG_appName__",
   "short_name": "__MSG_shortName__",
   "description": "__MSG_appDescription__",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "default_locale": "en",
   "permissions": [
     "fileSystemProvider",
@@ -29,7 +29,8 @@
     "128": "icons/128.png"
   },
   "file_system_provider_capabilities": {
-    "source": "network"
+    "source": "network",
+    "multiple_mounts": true
   },
   "minimum_chrome_version": "42"
 }
