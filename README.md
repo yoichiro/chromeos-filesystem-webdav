@@ -1,3 +1,5 @@
+[![Code Climate](https://codeclimate.com/github/yoichiro/chromeos-filesystem-webdav/badges/gpa.svg)](https://codeclimate.com/github/yoichiro/chromeos-filesystem-webdav)
+
 # WebDAV File System
 
 WebDAV File System provides you an ability to access to your WebDAV storage directly from the Files app.
