@@ -127,10 +127,21 @@
         console.log(options);
         var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
         var webDavClient = getWebDavClient.call(this, options.fileSystemId);
+        var cache = metadataCache.get(filePath);
+        var read_len = options.length;
+        if (cache.directoryExists && cache.fileExists) {
+            if (options.offset + options.length > cache.metadata.size) {
+                read_len = cache.metadata.size - options.offset;
+                if (read_len <= 0) {
+                    successCallback(new ArrayBuffer(0), false);
+                    return;
+                }
+            }
+        }
         webDavClient.readFile({
             path: filePath,
             offset: options.offset,
-            length: options.length,
+            length: read_len,
             onSuccess: function(result) {
                 console.log(result);
                 successCallback(result.data, result.hasMore);
