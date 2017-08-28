@@ -2,6 +2,11 @@
 
 (function() {
 
+    if (!chrome.fileSystemProvider) {
+        console.log("There is no chrome.fileSystemProvider API. See you on ChromeOS!");
+        return;
+    }
+
     var webdav_fs_ = new WebDavFS();
 
     var openWindow = function() {
