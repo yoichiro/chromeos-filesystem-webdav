@@ -464,7 +464,7 @@
         for (var i = 0; i < split.length; i++) {
             result.push(encodeURIComponent(split[i]));
         }
-        return "/" + result.join("/");
+        return (path.charAt(0) == '/' ? "" : "/") + result.join("/");
     };
 
     // Export
