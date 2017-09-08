@@ -36,7 +36,7 @@
     WebDavClient.prototype.getRootPath = function() {
         return this.rootPath_;
     };
-    
+
     // options: onSuccess, onError
     WebDavClient.prototype.checkRootPath = function(options) {
         var headers = createHeaders.call(this, {
@@ -70,10 +70,12 @@
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
-            var metadata = createMetadata.call(this, result);
-            options.onSuccess({
-                metadata: metadata
-            });
+            if (checkStatus.call(this, getResponseStatus.call(this, result), options.onError)) {
+                var metadata = createMetadata.call(this, result);
+                options.onSuccess({
+                    metadata: metadata
+                });
+            }
         }.bind(this)).fail(function(error) {
             console.log(error);
             handleError.call(this, error, options.onSuccess, options.onError);
@@ -92,19 +94,21 @@
             headers: headers,
             dataType: "xml"
         }).done(function(result) {
-            console.log(result);
             var responses = elements.call(this, result, "response");
             var metadataList = [];
-            // First element should be ignored because it is the parent directory.
-            if (responses.length > 1) {
-                for (var i = 1; i < responses.length; i++) {
-                    var metadata = createMetadata.call(this, responses[i]);
-                    metadataList.push(metadata);
+            if (checkStatus.call(this, getResponseStatus.call(this, responses[0]), options.onError)) {
+                if (responses.length > 1) {
+                    for (var i = 1; i < responses.length; i++) {
+                        if (checkStatus.call(this, getResponseStatus.call(this, responses[i]))) {
+                            var metadata = createMetadata.call(this, responses[i]);
+                            metadataList.push(metadata);
+                        }
+                    }
                 }
+                options.onSuccess({
+                    metadataList: metadataList
+                });
             }
-            options.onSuccess({
-                metadataList: metadataList
-            });
         }.bind(this)).fail(function(error) {
             console.log(error);
             handleError.call(this, error, options.onSuccess, options.onError);
@@ -340,6 +344,22 @@
         }
     };
 
+    var checkStatus = function(status, onError) {
+        if (status === 200 || status === 201) {
+            return true;
+        } else {
+            console.log(status);
+            if (onError) {
+                if (status === 404) {
+                   onError("NOT_FOUND");
+                } else {
+                    onError("FAILED");
+                }
+            }
+            return false;
+        }
+    };
+
     // options: filePath, data
     var sendSimpleUpload = function(options, successCallback, errorCallback) {
         var headers = createHeaders.call(this, {
@@ -437,6 +457,11 @@
         return elements.length > 0;
     };
 
+    var getResponseStatus = function(element) {
+        var statusText = select.call(this, element, "status");
+        return Number(statusText.match(/HTTP\/1\.1 (\d{3})/)[1]);
+    };
+
     var createMetadata = function(element) {
         var name = decodeURIComponent(getNameFromPath.call(this, select.call(this, element, "href")));
         var contentType = select.call(this, element, "getcontenttype");
@@ -457,7 +482,7 @@
         }
         return metadata;
     };
-    
+
     var encodePath = function(path) {
         var result = [];
         var split = path.split("/");
