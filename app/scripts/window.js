@@ -68,6 +68,7 @@
         var request = {
             type: "mount",
             url: url,
+            name: document.querySelector("#name").value,
             authType: document.querySelector("#authType").selected,
             username: document.querySelector("#username").value,
             password: document.querySelector("#password").value

@@ -39,6 +39,10 @@
     "message": "URL",
     "description": "The server's URL"
   },
+  "name": {
+    "message": "Name",
+    "description": "The display name"
+  },
   "authTypeNone": {
     "message": "None",
     "description": "The authentication type: none"
