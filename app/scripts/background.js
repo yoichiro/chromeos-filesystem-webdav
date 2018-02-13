@@ -15,7 +15,7 @@
                 width: 800,
                 height: 470
             },
-            resizable: false
+            resizable: true
         });
     };
 
