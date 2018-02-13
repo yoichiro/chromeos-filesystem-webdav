@@ -4,9 +4,10 @@
 
     // Constructor
 
-    var WebDavClient = function(webDavFS, url, authType, username, password) {
+    var WebDavClient = function(webDavFS, url, name, authType, username, password) {
         this.webdav_fs_ = webDavFS;
         this.url_ = url;
+        this.name_ = name;
         this.authType_ = authType;
         this.username_ = username;
         this.password_ = password;
@@ -19,6 +20,10 @@
 
     WebDavClient.prototype.getUrl = function() {
         return this.url_;
+    };
+
+    WebDavClient.prototype.getName = function() {
+        return this.name_;
     };
 
     WebDavClient.prototype.getAuthType = function() {

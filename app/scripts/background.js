@@ -15,7 +15,7 @@
                 width: 800,
                 height: 470
             },
-            resizable: false
+            resizable: true
         });
     };
 
@@ -35,6 +35,7 @@
             } else {
                 var options = {
                     url: request.url,
+                    name: request.name,
                     authType: request.authType,
                     username: request.username,
                     password: request.password,

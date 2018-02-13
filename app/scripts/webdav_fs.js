@@ -16,13 +16,14 @@
     WebDavFS.prototype.mount = function(options) {
         var fileSystemId = createFileSystemID.call(this, options.url, options.username);
         var webDavClient = new WebDavClient(
-            this, options.url, options.authType, options.username, options.password);
+            this, options.url, options.name, options.authType, options.username, options.password);
         webDavClient.checkRootPath({
             onSuccess: function() {
                 this.webDavClientMap_[fileSystemId] = webDavClient;
                 doMount.call(
                     this,
                     webDavClient.getUrl(),
+                    webDavClient.getName(),
                     webDavClient.getAuthType(),
                     webDavClient.getUsername(),
                     webDavClient.getPassword(),
@@ -42,6 +43,7 @@
             if (credential) {
                 this.mount({
                     url: credential.url,
+                    name: credential.name,
                     authType: credential.authType,
                     username: credential.username,
                     password: credential.password,
@@ -315,18 +317,16 @@
 
     // Private functions
 
-    var doMount = function(url, authType, username, password, callback) {
+    var doMount = function(url, name, authType, username, password, callback) {
         this.checkAlreadyMounted(url, username, function(exists) {
             if (!exists) {
                 var fileSystemId = createFileSystemID.call(this, url, username);
-                var displayName = url;
-                displayName += " (" + username + ")";
                 registerMountedCredential(
-                    url, authType, username, password,
+                    url, name, authType, username, password,
                     function() {
                         chrome.fileSystemProvider.mount({
                             fileSystemId: fileSystemId,
-                            displayName: displayName,
+                            displayName: name,
                             writable: true
                         }, function() {
                             callback();
@@ -367,12 +367,13 @@
     };
 
     var registerMountedCredential = function(
-            url, authType, username, password, callback) {
+            url, name, authType, username, password, callback) {
         var fileSystemId = createFileSystemID.call(this, url, username);
         chrome.storage.local.get("mountedCredentials", function(items) {
             var mountedCredentials = items.mountedCredentials || {};
             mountedCredentials[fileSystemId] = {
                 url: url,
+                name: name,
                 authType: authType,
                 username: username,
                 password: password
