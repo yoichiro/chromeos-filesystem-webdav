@@ -2,10 +2,8 @@
   box-sizing: border-box;
 }
 
-body {
-  font-family: Helvetica, Arial, sans-serif;
-  margin: 0px;
-  padding: 0px;
+th {
+  text-align: right;
 }
 
 .list {
