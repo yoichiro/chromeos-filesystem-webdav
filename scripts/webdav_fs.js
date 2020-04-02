@@ -1,537 +1,301 @@
-"use strict";
+'use strict';
 
-(function() {
+(() => {
+  class WebDAVFS {
+    #webDAVClientMap = {};
+    #openedFilesMap = {};
+    #metadataCacheMap = {};
 
-    // Constructor
+    constructor() {
+      this.#assignEventHandlers();
+      this.#resume();
+    }
 
-    var WebDavFS = function() {
-        this.webDavClientMap_ = {};
-        this.opened_files_ = {};
-        this.metadataCache_ = {};
-        assignEventHandlers.call(this);
-    };
+    async isMounted(url, username) {
+      const fileSystemId = createFileSystemID(url, username);
+      return await browser.fileSystemProvider.get(fileSystemId) || false;
+    }
 
-    // Public functions
+    async mount(options) {
+      console.log('WebDAVFS.mount')
 
-    WebDavFS.prototype.mount = function(options) {
-        var fileSystemId = createFileSystemID.call(this, options.url, options.username);
-        var webDavClient = new WebDavClient(
-            this, options.url, options.authType, options.username, options.password);
-        webDavClient.checkRootPath({
-            onSuccess: function() {
-                this.webDavClientMap_[fileSystemId] = webDavClient;
-                doMount.call(
-                    this,
-                    webDavClient.getUrl(),
-                    webDavClient.getAuthType(),
-                    webDavClient.getUsername(),
-                    webDavClient.getPassword(),
-                    function() {
-                        options.onSuccess();
-                    }.bind(this));
-            }.bind(this),
-            onError: function(error) {
-                options.onError(error);
-            }.bind(this)
-        });
-    };
+      const { name, url, username, password } = options;
+      if (await this.isMounted(url, username)) return;
 
-    WebDavFS.prototype.resume = function(fileSystemId, onSuccess, onError) {
-        console.log("resume - start");
-        getMountedCredential.call(this, fileSystemId, function(credential) {
-            if (credential) {
-                this.mount({
-                    url: credential.url,
-                    authType: credential.authType,
-                    username: credential.username,
-                    password: credential.password,
-                    onSuccess: function() {
-                        onSuccess();
-                    }.bind(this),
-                    onError: function(reason) {
-                        onError(reason);
-                    }.bind(this)
-                });
-            } else {
-                onError("Credential[" + fileSystemId + "] not found");
-            }
-        }.bind(this));
-    };
+      const client = WebDAV.createClient(url, { username, password });
+      await client.getDirectoryContents('/'); // connect and authenticate
 
-    WebDavFS.prototype.onUnmountRequested = function(options, successCallback, errorCallback) {
-        console.log("onUnmountRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        doUnmount.call(this, webDavClient, options.requestId, successCallback);
-    };
+      const fileSystemId = createFileSystemID(url, username);
+      await browser.fileSystemProvider.mount(
+        { fileSystemId, displayName: name, writable: true }
+      );
 
-    WebDavFS.prototype.onReadDirectoryRequested = function(options, successCallback, errorCallback) {
-        console.log("onReadDirectoryRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.readDirectory({
-            path: options.directoryPath,
-            onSuccess: function(result) {
-                console.log(result);
-                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
-                metadataCache.put(options.directoryPath, result.metadataList);
-                successCallback(result.metadataList, false);
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
+      this.#webDAVClientMap[fileSystemId] = client;
+      this.#openedFilesMap[fileSystemId] = {};
+      this.#metadataCacheMap[fileSystemId] = new MetadataCache();
 
-    WebDavFS.prototype.onGetMetadataRequested = function(options, successCallback, errorCallback) {
-        console.log("onGetMetadataRequested: thumbnail=" + options.thumbnail);
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        var metadataCache = getMetadataCache.call(this, options.fileSystemId);
-        var cache = metadataCache.get(options.entryPath);
-        if (cache.directoryExists && cache.fileExists) {
-            successCallback(cache.metadata);
-        } else {
-            webDavClient.getMetadata({
-                path: options.entryPath,
-                onSuccess: function(result) {
-                    console.log(result);
-                    successCallback(result.metadata);
-                }.bind(this),
-                onError: function(reason) {
-                    console.log(reason);
-                    if (reason === "NOT_FOUND") {
-                        errorCallback("NOT_FOUND");
-                    } else {
-                        errorCallback("FAILED");
-                    }
-                }.bind(this)
+      await storeMountedCredential(fileSystemId, options);
+    }
+
+    async resumeMounts() {
+      for (const { name, url, username, password } of await getMountedCredentials()) {
+        const client = WebDAV.createClient(url, { username, password });
+        await client.getDirectoryContents('/'); // connect and authenticate
+
+        const fileSystemId = createFileSystemID(url, username);
+        await browser.fileSystemProvider.mount(
+          { fileSystemId, displayName: name, writable: true }
+        );
+
+        this.#webDAVClientMap[fileSystemId] = client;
+        this.#openedFilesMap[fileSystemId] = {};
+        this.#metadataCacheMap[fileSystemId] = new MetadataCache();
+      }
+    }
+
+    async onUnmountRequested(options) {
+      console.log("WebDAVFS.onUnmountRequested");
+
+      const { fileSystemId } = options;
+      await browser.fileSystemProvider.unmount({ fileSystemId });
+
+      delete this.#webDAVClientMap[fileSystemId];
+      delete this.#openedFilesMap[fileSystemId];
+      delete this.#metadataCacheMap[fileSystemId];
+
+      await removeMountedCredential(fileSystemId);
+    }
+
+    async onReadDirectoryRequested(options) {
+      const { fileSystemId, directoryPath } = options;
+      console.log(`WebDAVFS.onReadDirectoryRequested: directoryPath=${directoryPath}`);
+      console.debug(options);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      const stats = await client.getDirectoryContents(directoryPath);
+      const metadataList = stats.map(fromStat);
+      const metadataCache = this.#metadataCacheMap[fileSystemId];
+      metadataCache.put(directoryPath, metadataList);
+      const hasMore = false;
+      return [metadataList.map(metadata => canonicalizedMetadata(metadata, options)), hasMore];
+    }
+
+    async onGetMetadataRequested(options) {
+      const { fileSystemId, entryPath, thumbnail } = options;
+      console.log(`WebDAVFS.onGetMetadataRequested: entryPath=${entryPath}, thumbnail=${thumbnail}`);
+      console.debug(options);
+
+      if (thumbnail) throw new Error('Thumbnail not supported');
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      const metadataCache = this.#metadataCacheMap[fileSystemId];
+      const cache = metadataCache.get(entryPath);
+      if (cache.directoryExists && cache.fileExists)
+        return [canonicalizedMetadata(cache.metadata, options)];
+
+      const stat = await client.stat(entryPath);
+      console.debug(stat);
+      return [canonicalizedMetadata(fromStat(stat), options)];
+    }
+
+    async onOpenFileRequested(options) {
+      const { fileSystemId, requestId, filePath, mode } = options;
+      console.log(`WebDAVFS.onOpenFileRequested: requestId=${requestId}, filePath=${filePath}, mode=${mode}`);
+      console.debug(options);
+
+      let buffer;
+      switch (mode) {
+      case 'READ':
+        const client = this.#webDAVClientMap[fileSystemId];
+        buffer = await client.getFileContents(filePath);
+        break;
+      case 'WRITE':
+        buffer = new ArrayBuffer(0);
+        break;
+      }
+
+      this.#openedFilesMap[fileSystemId][requestId] = { filePath, mode, buffer };
+    }
+
+    async onCloseFileRequested(options) {
+      const { fileSystemId, openRequestId } = options;
+      console.log(`WebDAVFS.onCloseFileRequested: openRequestId=${openRequestId}`);
+
+      const { filePath, mode, buffer } = this.#openedFilesMap[fileSystemId][openRequestId];
+
+      if (mode === 'WRITE') {
+        const client = this.#webDAVClientMap[fileSystemId];
+        await client.putFileContents(filePath, buffer);
+      }
+
+      delete this.#openedFilesMap[fileSystemId][openRequestId];
+    }
+
+    async onReadFileRequested(options) {
+      const { fileSystemId, openRequestId, offset, length } = options;
+      console.log(`WebDAVFS.onReadFileRequested: openRequestId=${openRequestId}, offset=${offset}, length=${length}`);
+      console.debug(options);
+
+      const { buffer } = this.#openedFilesMap[fileSystemId][openRequestId];
+      const hasMore = false;
+      return [buffer.slice(offset, offset + length), hasMore];
+    }
+
+    async onCreateDirectoryRequested(options) {
+      const { fileSystemId, directoryPath } = options;
+      console.log(`WebDAVFS.onCreateDirectoryRequested: directoryPath=${directoryPath}, recursive=${recursive}`);
+      console.debug(options);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      await client.createDirectory(directoryPath);
+    }
+
+    async onDeleteEntryRequested(options) {
+      const { fileSystemId, entryPath } = options;
+      console.log(`WebDAVFS.onDeleteEntryRequested: entryPath=${entryPath}`);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      client.deleteFile(entryPath);
+
+      const metadataCache = this.#metadataCacheMap[fileSystemId];
+      metadataCache.remove(entryPath);
+    }
+
+    async onCreateFileRequested(options) {
+      const { fileSystemId, filePath } = options;
+      console.log(`WebDAVFS.onCreateFileRequested: filePath=${filePath}`);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      await client.putFileContents(filePath, new ArrayBuffer(0));
+
+      const metadataCache = this.#metadataCacheMap[fileSystemId];
+      metadataCache.remove(filePath);
+    }
+
+    async onCopyEntryRequested(options) {
+      const { fileSystemId, sourcePath, targetPath } = options;
+      console.log(`WebDAVFS.onCopyEntryRequested: sourcePath=${sourcePath}, targetPath=${targetPath}`);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      await client.copyFile(sourcePath, targetPath);
+
+      const metadataCache = this.#metadataCacheMap[fileSystemId];
+      metadataCache.remove(sourcePath);
+      metadataCache.remove(targetPath);
+    }
+
+    async onMoveEntryRequested(options) {
+      const { fileSystemId, sourcePath, targetPath } = options;
+      console.log(`WebDAVFS.onMoveEntryRequested: sourcePath=${sourcePath}, targetPath=${targetPath}`);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      await client.moveFile(sourcePath, targetPath);
+
+      const metadataCache = this.#metadataCacheMap[fileSystemId];
+      metadataCache.remove(sourcePath);
+      metadataCache.remove(targetPath);
+    }
+
+    async onTruncateRequested(options) {
+      const { fileSystemId, filePath, length } = options;
+      console.log(`WebDAVFS.onTruncateRequested: filePath=${filePath}, length=${length}`);
+
+      const client = this.#webDAVClientMap[fileSystemId];
+      const buffer = await client.getFileContents(filePath);
+      await client.putFileContents(buffer.slice(0, length));
+    }
+
+    async onWriteFileRequested(options) {
+      const { fileSystemId, openRequestId, offset, data } = options;
+      console.log(`WebDAVFS.onWriteFileRequested: offset=${offset}`);
+
+      const { buffer } = this.#openedFilesMap[fileSystemId][openRequestId];
+      const typed = new Uint8Array(new ArrayBuffer(offset + data.byteLength));
+      typed.set(new Uint8Array(buffer));
+      typed.set(new Uint8Array(data), offset);
+      this.#openedFilesMap[fileSystemId][openRequestId].buffer = typed.buffer;
+    }
+
+    async onAbortRequested(options) {
+      const { fileSystemId, operationRequestId } = options;
+      console.log(`WebDAVFS.onAbortRequested: operationRequestId=${operationRequestId}`)
+    }
+
+    #assignEventHandlers = () => {
+      for (const name of Object.getOwnPropertyNames(WebDAVFS.prototype)) {
+        if (!name.match(/^on/)) continue;
+
+        browser.fileSystemProvider[name].addListener(
+          (options, successCallback, errorCallback) => {
+            this[name](options).then(result => {
+              successCallback(...(result || []));
+            }).catch(error => {
+              if (error instanceof Error) console.error(error);
+              let reason = error instanceof String ? error : 'FAILED';
+              if (error.message === 'Request failed with status code 404')
+                reason = 'NOT_FOUND';
+              errorCallback(reason);
             });
-        }
+          }
+        );
+      }
     };
 
-    WebDavFS.prototype.onOpenFileRequested = function(options, successCallback, errorCallback) {
-        console.log("onOpenFileRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.openFile(options.filePath, options.requestId, options.mode, function() {
-            var openedFiles = getOpenedFiles.call(this, options.fileSystemId);
-            openedFiles[options.requestId] = options.filePath;
-            successCallback();
-        }.bind(this), errorCallback);
+    #resume = async () => {
+      console.log('WebDAVFS.resume');
+
+      for (const { url, username, password } of await getMountedCredentials()) {
+        const client = WebDAV.createClient(url, { username, password });
+
+        const fileSystemId = createFileSystemID(url, username);
+        this.#webDAVClientMap[fileSystemId] = client;
+        this.#openedFilesMap[fileSystemId] = {};
+        this.#metadataCacheMap[fileSystemId] = {};
+      }
+    }
+  }
+
+  async function storeMountedCredential(fileSystemId, credential) {
+    let { mountedCredentials } = await browser.storage.local.get();
+    mountedCredentials = mountedCredentials || {};
+    mountedCredentials[fileSystemId] = credential;
+    await browser.storage.local.set({ mountedCredentials });
+  }
+
+  async function removeMountedCredential(fileSystemId) {
+    const { mountedCredentials } = await browser.storage.local.get();
+    if (!mountedCredentials) return;
+    delete mountedCredentials[fileSystemId];
+    await browser.storage.local.set({ mountedCredentials });
+  }
+
+  async function getMountedCredentials() {
+    const { mountedCredentials } = await browser.storage.local.get();
+    return Object.values(mountedCredentials || {});
+  }
+
+  function createFileSystemID(url, username) {
+    return `webdavfs://${username}/${url}`;
+  }
+
+  function fromStat(stat) {
+    const { basename, lastmod, size, type, mime } = stat;
+    return {
+      isDirectory: type === 'directory',
+      name: basename,
+      size: size,
+      modificationTime: new Date(lastmod),
+      mimeType: mime,
     };
+  }
 
-    WebDavFS.prototype.onReadFileRequested = function(options, successCallback, errorCallback) {
-        console.log("onReadFileRequested - start");
-        console.log(options);
-        var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        var cache = metadataCache.get(filePath);
-        var read_len = options.length;
-        if (cache.directoryExists && cache.fileExists) {
-            if (options.offset + options.length > cache.metadata.size) {
-                read_len = cache.metadata.size - options.offset;
-                if (read_len <= 0) {
-                    successCallback(new ArrayBuffer(0), false);
-                    return;
-                }
-            }
-        }
-        webDavClient.readFile({
-            path: filePath,
-            offset: options.offset,
-            length: read_len,
-            onSuccess: function(result) {
-                console.log(result);
-                successCallback(result.data, result.hasMore);
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
+  function canonicalizedMetadata(metadata, options) {
+    const _metadata = Object.assign({}, metadata);
+    for (const key of Object.keys(metadata)) {
+      if (!options[key]) delete _metadata[key];
+    }
+    return _metadata;
+  }
 
-    WebDavFS.prototype.onCloseFileRequested = function(options, successCallback, errorCallback) {
-        console.log("onCloseFileRequested");
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
-        webDavClient.closeFile({
-            path: filePath,
-            openRequestId: options.openRequestId,
-            onSuccess: function() {
-                delete this.opened_files_[options.openRequestId];
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }.bind(this)
-        });
-    };
-
-    WebDavFS.prototype.onCreateDirectoryRequested = function(options, successCallback, errorCallback) {
-        console.log("onCreateDirectoryRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.createDirectory({
-            path: options.directoryPath,
-            onSuccess: function() {
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.onDeleteEntryRequested = function(options, successCallback, errorCallback) {
-        console.log("onDeleteEntryRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.deleteEntry({
-            path: options.entryPath,
-            onSuccess: function() {
-                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
-                metadataCache.remove(options.entryPath);
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.onMoveEntryRequested = function(options, successCallback, errorCallback) {
-        console.log("onMoveEntryRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.moveEntry({
-            sourcePath: options.sourcePath,
-            targetPath: options.targetPath,
-            onSuccess: function() {
-                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
-                metadataCache.remove(options.sourcePath);
-                metadataCache.remove(options.targetPath);
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.onCopyEntryRequested = function(options, successCallback, errorCallback) {
-        console.log("onCopyEntryRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.copyEntry({
-            sourcePath: options.sourcePath,
-            targetPath: options.targetPath,
-            onSuccess: function() {
-                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
-                metadataCache.remove(options.sourcePath);
-                metadataCache.remove(options.targetPath);
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.onWriteFileRequested = function(options, successCallback, errorCallback) {
-        console.log("onWriteFileRequested");
-        console.log(options);
-        var filePath = getOpenedFiles.call(this, options.fileSystemId)[options.openRequestId];
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.writeFile({
-            path: filePath,
-            offset: options.offset,
-            data: options.data,
-            openRequestId: options.openRequestId,
-            onSuccess: function() {
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.onTruncateRequested = function(options, successCallback, errorCallback) {
-        console.log("onTruncateRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.truncate({
-            path: options.filePath,
-            length: options.length,
-            onSuccess: function() {
-                successCallback(false);
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.onCreateFileRequested = function(options, successCallback, errorCallback) {
-        console.log("onCreateFileRequested");
-        console.log(options);
-        var webDavClient = getWebDavClient.call(this, options.fileSystemId);
-        webDavClient.createFile({
-            path: options.filePath,
-            onSuccess: function() {
-                var metadataCache = getMetadataCache.call(this, options.fileSystemId);
-                metadataCache.remove(options.filePath);
-                successCallback();
-            }.bind(this),
-            onError: function(reason) {
-                console.log(reason);
-                errorCallback("FAILED");
-            }
-        });
-    };
-
-    WebDavFS.prototype.checkAlreadyMounted = function(url, username, callback) {
-        var fileSystemId = createFileSystemID.call(this, url, username);
-        chrome.fileSystemProvider.getAll(function(fileSystems) {
-            for (var i = 0; i < fileSystems.length; i++) {
-                if (fileSystems[i].fileSystemId === fileSystemId) {
-                    callback(true);
-                    return;
-                }
-            }
-            callback(false);
-        }.bind(this));
-    };
-
-    // Private functions
-
-    var doMount = function(url, authType, username, password, callback) {
-        this.checkAlreadyMounted(url, username, function(exists) {
-            if (!exists) {
-                var fileSystemId = createFileSystemID.call(this, url, username);
-                var displayName = url;
-                displayName += " (" + username + ")";
-                registerMountedCredential(
-                    url, authType, username, password,
-                    function() {
-                        chrome.fileSystemProvider.mount({
-                            fileSystemId: fileSystemId,
-                            displayName: displayName,
-                            writable: true
-                        }, function() {
-                            callback();
-                        }.bind(this));
-                    }.bind(this));
-            } else {
-                callback();
-            }
-        }.bind(this));
-    };
-
-    var doUnmount = function(webDavClient, requestId, successCallback) {
-        console.log("doUnmount");
-        _doUnmount.call(
-            this,
-            webDavClient.getUrl(),
-            webDavClient.getUsername(),
-            function() {
-                successCallback();
-            }.bind(this));
-    };
-
-    var _doUnmount = function(url, username, successCallback) {
-        console.log("_doUnmount");
-        unregisterMountedCredential.call(
-            this, url, username,
-            function() {
-                var fileSystemId = createFileSystemID.call(this, url, username);
-                console.log(fileSystemId);
-                chrome.fileSystemProvider.unmount({
-                    fileSystemId: fileSystemId
-                }, function() {
-                    delete this.webDavClientMap_[fileSystemId];
-                    deleteMetadataCache.call(this, fileSystemId);
-                    successCallback();
-                }.bind(this));
-            }.bind(this));
-    };
-
-    var registerMountedCredential = function(
-            url, authType, username, password, callback) {
-        var fileSystemId = createFileSystemID.call(this, url, username);
-        chrome.storage.local.get("mountedCredentials", function(items) {
-            var mountedCredentials = items.mountedCredentials || {};
-            mountedCredentials[fileSystemId] = {
-                url: url,
-                authType: authType,
-                username: username,
-                password: password
-            };
-            chrome.storage.local.set({
-                mountedCredentials: mountedCredentials
-            }, function() {
-                callback();
-            }.bind(this));
-        }.bind(this));
-    };
-
-    var unregisterMountedCredential = function(url, username, callback) {
-        var fileSystemId = createFileSystemID.call(this, url, username);
-        chrome.storage.local.get("mountedCredentials", function(items) {
-            var mountedCredentials = items.mountedCredentials || {};
-            delete mountedCredentials[fileSystemId];
-            chrome.storage.local.set({
-                mountedCredentials: mountedCredentials
-            }, function() {
-                callback();
-            }.bind(this));
-        }.bind(this));
-    };
-
-    var getMountedCredential = function(fileSystemId, callback) {
-        chrome.storage.local.get("mountedCredentials", function(items) {
-            var mountedCredentials = items.mountedCredentials || {};
-            var credential = mountedCredentials[fileSystemId];
-            callback(credential);
-        }.bind(this));
-    };
-
-    var createFileSystemID = function(url, username) {
-        var id = "webdavfs://" + username + "/" + url;
-        return id;
-    };
-
-    var createEventHandler = function(callback) {
-        return function(options, successCallback, errorCallback) {
-            var fileSystemId = options.fileSystemId;
-            var webDavClient = getWebDavClient.call(this, fileSystemId);
-            if (!webDavClient) {
-                this.resume(fileSystemId, function() {
-                    callback(options, successCallback, errorCallback);
-                }.bind(this), function(reason) {
-                    console.log("resume failed: " + reason);
-                    chrome.notifications.create("", {
-                        type: "basic",
-                        title: "WebDAV File System",
-                        message: "Resuming connection failed.",
-                        iconUrl: "/icons/48.png"
-                    }, function(notificationId) {
-                        errorCallback("FAILED");
-                    }.bind(this));
-                }.bind(this));
-            } else {
-                callback(options, successCallback, errorCallback);
-            }
-        }.bind(this);
-    };
-
-    var assignEventHandlers = function() {
-        chrome.fileSystemProvider.onUnmountRequested.addListener(
-            function(options, successCallback, errorCallback) { // Unmount immediately
-                var fileSystemId = options.fileSystemId;
-                var webDavClient = getWebDavClient.call(this, fileSystemId);
-                if (!webDavClient) {
-                    this.resume(fileSystemId, function() {
-                        this.onUnmountRequested(options, successCallback, errorCallback);
-                    }.bind(this), function(reason) {
-                        console.log("resume failed: " + reason);
-                        errorCallback("FAILED");
-                    }.bind(this));
-                } else {
-                    this.onUnmountRequested(options, successCallback, errorCallback);
-                }
-            }.bind(this));
-        chrome.fileSystemProvider.onReadDirectoryRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onReadDirectoryRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onGetMetadataRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onGetMetadataRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onOpenFileRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onOpenFileRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onReadFileRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onReadFileRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onCloseFileRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onCloseFileRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onCreateDirectoryRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onCreateDirectoryRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onDeleteEntryRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onDeleteEntryRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onMoveEntryRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onMoveEntryRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onCopyEntryRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onCopyEntryRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onWriteFileRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onWriteFileRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onTruncateRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onTruncateRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-        chrome.fileSystemProvider.onCreateFileRequested.addListener(
-            createEventHandler.call(this, function(options, successCallback, errorCallback) {
-                this.onCreateFileRequested(options, successCallback, errorCallback);
-            }.bind(this)));
-    };
-
-    var getWebDavClient = function(fileSystemID) {
-        var webDavClient = this.webDavClientMap_[fileSystemID];
-        return webDavClient;
-    };
-
-    var getOpenedFiles = function(fileSystemId) {
-        var openedFiles = this.opened_files_[fileSystemId];
-        if (!openedFiles) {
-            openedFiles = {};
-            this.opened_files_[fileSystemId] = openedFiles;
-        }
-        return openedFiles;
-    };
-
-    var getMetadataCache = function(fileSystemId) {
-        var metadataCache = this.metadataCache_[fileSystemId];
-        if (!metadataCache) {
-            metadataCache = new MetadataCache();
-            this.metadataCache_[fileSystemId] = metadataCache;
-            console.log("getMetadataCache: Created. " + fileSystemId);
-        }
-        return metadataCache;
-    };
-
-    var deleteMetadataCache = function(fileSystemId) {
-        console.log("deleteMetadataCache: " + fileSystemId);
-        delete this.metadataCache_[fileSystemId];
-    };
-
-    // Export
-
-    window.WebDavFS = WebDavFS;
-
+  window.WebDAVFS = WebDAVFS;
 })();

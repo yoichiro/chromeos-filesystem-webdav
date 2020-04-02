@@ -16,25 +16,15 @@ document.querySelector('#btnOk').addEventListener('click', async ev => {
   // }
 
   const request = {
-      type: "mount",
-      authType: 'basic',
-      url,
-      username,
-      password,
+    type: 'mount',
+    authType: 'basic',
+    name, url, username, password,
   };
 
-  const response = await browser.runtime.sendMessage(request)
-  if (response.success) {
-    const credentials = await browser.storage.local.get('credentials');
-    const key = url;
-    const credential = { name, url, username, password };
-    credentials[key] = credential;
-    await browser.storage.local.set({ credentials });
-    window.close();
-  } else {
-    if (response.error) {
-      message.innerText = response.error;
-    }
-    btnOk.removeAttribute("disabled");
-  }
+  await browser.runtime.sendMessage(request)
+    .then(window.close)
+    .catch(error => {
+      message.innerText = error.message;
+      btnOk.removeAttribute("disabled");
+    });
 });

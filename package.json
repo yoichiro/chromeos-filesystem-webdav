@@ -1,11 +1,15 @@
 {
   "name": "chromeos-filesystem-webdav",
   "version": "2.0.0",
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/yuntan/chromeos-filesystem-webdav"
+  },
   "dependencies": {
-    "jquery": "^3.4.1",
+    "webdav": "^3.2.0",
     "webextension-polyfill": "^0.6.0"
   },
-  "engines": {
-    "node": ">=0.8.0"
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^70.0.1"
   }
 }
