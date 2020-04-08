@@ -2,9 +2,9 @@
 
 (() => {
   class WebDAVFS {
-    #webDAVClientMap = {};
-    #openedFilesMap = {};
-    #metadataCacheMap = {};
+    #webDAVClientMap = {}; // #webDAVClientMap[fileSystemId] => WebDAV.Client
+    #openedFilesMap = {}; // #openedFilesMap[openRequestId] => { filePath, mode }
+    #metadataCacheMap = {}; // #metadataCacheMap[fileSystemId] => MetadataCache
 
     constructor() {
       this.#assignEventHandlers();
@@ -13,7 +13,9 @@
 
     async isMounted(url, username) {
       const fileSystemId = createFileSystemID(url, username);
-      return await browser.fileSystemProvider.get(fileSystemId) || false;
+      return await new Promise(resolve => {
+        browser.fileSystemProvider.get(fileSystemId, resolve);
+      }) ? true : false;
     }
 
     async mount(options) {
@@ -31,7 +33,6 @@
       );
 
       this.#webDAVClientMap[fileSystemId] = client;
-      this.#openedFilesMap[fileSystemId] = {};
       this.#metadataCacheMap[fileSystemId] = new MetadataCache();
 
       await storeMountedCredential(fileSystemId, options);
@@ -99,46 +100,61 @@
     }
 
     async onOpenFileRequested(options) {
-      const { fileSystemId, requestId, filePath, mode } = options;
-      console.log(`WebDAVFS.onOpenFileRequested: requestId=${requestId}, filePath=${filePath}, mode=${mode}`);
+      const { requestId, filePath, mode } = options;
+      console.log(`WebDAVFS.onOpenFileRequested: requestId=${requestId}, filePath='${filePath}', mode=${mode}`);
       console.debug(options);
 
-      let buffer;
-      switch (mode) {
-      case 'READ':
+      const uuid = uuidv1();
+      if (mode === 'WRITE') {
+        // Nextcloud Chunking file upload
+        // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
         const client = this.#webDAVClientMap[fileSystemId];
-        buffer = await client.getFileContents(filePath);
-        break;
-      case 'WRITE':
-        buffer = new ArrayBuffer(0);
-        break;
+        await client.createDirectory('/' + uuid);
       }
 
-      this.#openedFilesMap[fileSystemId][requestId] = { filePath, mode, buffer };
+      this.#openedFilesMap[requestId] = { filePath, mode, uuid };
     }
 
     async onCloseFileRequested(options) {
       const { fileSystemId, openRequestId } = options;
-      console.log(`WebDAVFS.onCloseFileRequested: openRequestId=${openRequestId}`);
+      const { filePath, mode, uuid } = this.#openedFilesMap[openRequestId];
+      console.log(`WebDAVFS.onCloseFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', mode=${mode}`);
 
-      const { filePath, mode, buffer } = this.#openedFilesMap[fileSystemId][openRequestId];
 
       if (mode === 'WRITE') {
+        // Nextcloud Chunking file upload
+        // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
         const client = this.#webDAVClientMap[fileSystemId];
-        await client.putFileContents(filePath, buffer);
+        await client.moveFile(`/${uuid}/.file`, filePath);
       }
 
-      delete this.#openedFilesMap[fileSystemId][openRequestId];
+      delete this.#openedFilesMap[openRequestId];
     }
 
     async onReadFileRequested(options) {
       const { fileSystemId, openRequestId, offset, length } = options;
-      console.log(`WebDAVFS.onReadFileRequested: openRequestId=${openRequestId}, offset=${offset}, length=${length}`);
+      const { filePath } = this.#openedFilesMap[openRequestId];
+      console.log(`WebDAVFS.onReadFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', offset=${offset}, length=${length}`);
       console.debug(options);
 
-      const { buffer } = this.#openedFilesMap[fileSystemId][openRequestId];
+      const client = this.#webDAVClientMap[fileSystemId];
+      const url = new URL(client.getFileDownloadLink(filePath));
+      const url_ = url.origin + url.pathname;
+
+      const { username, password } = url;
+      const credential = `${username}:${password}`;
+
+      const headers = new Headers();
+      headers.set('Authorization', `Basic ${btoa(credential)}`);
+      // HTTP range requests
+      // https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests
+      headers.set('Range', `bytes=${offset}-${offset + length - 1}`);
+
+      const response = await fetch(url_, { headers });
+      console.log(`WebDAVFS.onReadFileRequested: Content-Range: ${response.headers.get('Content-Range')}`);
+      const buffer = await response.arrayBuffer();
       const hasMore = false;
-      return [buffer.slice(offset, offset + length), hasMore];
+      return [buffer, hasMore];
     }
 
     async onCreateDirectoryRequested(options) {
@@ -207,13 +223,19 @@
 
     async onWriteFileRequested(options) {
       const { fileSystemId, openRequestId, offset, data } = options;
-      console.log(`WebDAVFS.onWriteFileRequested: offset=${offset}`);
+      const { filePath } = this.#openedFilesMap[openRequestId];
+      console.log(`WebDAVFS.onWriteFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', offset=${offset}, data.byteLength=${data.byteLength}`);
 
-      const { buffer } = this.#openedFilesMap[fileSystemId][openRequestId];
-      const typed = new Uint8Array(new ArrayBuffer(offset + data.byteLength));
-      typed.set(new Uint8Array(buffer));
-      typed.set(new Uint8Array(data), offset);
-      this.#openedFilesMap[fileSystemId][openRequestId].buffer = typed.buffer;
+      const { uuid } = this.#openedFilesMap[openRequestId];
+      const client = this.#webDAVClientMap[fileSystemId];
+
+      // Nextcloud Chunking file upload
+      // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
+      const end = offset + data.byteLength;
+      const uploadPath = `/${uuid}/${paddedIndex(offset)}-${paddedIndex(end)}`;
+
+      console.log(`WebDAVFS.onWriteFileRequested: uploadPath: ${uploadPath}`);
+      await client.putFileContents(uploadPath, data);
     }
 
     async onAbortRequested(options) {
@@ -249,8 +271,7 @@
 
         const fileSystemId = createFileSystemID(url, username);
         this.#webDAVClientMap[fileSystemId] = client;
-        this.#openedFilesMap[fileSystemId] = {};
-        this.#metadataCacheMap[fileSystemId] = {};
+        this.#metadataCacheMap[fileSystemId] = new MetadataCache();
       }
     }
   }
@@ -295,6 +316,13 @@
       if (!options[key]) delete _metadata[key];
     }
     return _metadata;
+  }
+
+  function paddedIndex(index) {
+    const padding = '000000000000000';
+    const length = padding.length;
+
+    return (padding + String(index)).slice(-length);
   }
 
   window.WebDAVFS = WebDAVFS;
