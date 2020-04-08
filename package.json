@@ -1,10 +1,19 @@
 {
-  "name": "chromeos-filesystem-webdav",
+  "name": "chromeos-filesystem-nextcloud",
   "version": "2.0.0",
-  "license": "BSD",
+  "description": "Nextcloud file system provider for Chrome OS",
+  "homepage": "https://github.com/yuntan/chromeos-filesystem-nextcloud",
+  "bugs": {
+    "url": "https://github.com/yuntan/chromeos-filesystem-nextcloud/issues"
+  },
+  "license": "BSD-3-Clause",
+  "author": {
+    "name": "Yuto Tokunaga",
+    "email": "yuntan.sub1@gmail.com"
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yuntan/chromeos-filesystem-webdav.git"
+    "url": "git+https://github.com/yuntan/chromeos-filesystem-nextcloud.git"
   },
   "dependencies": {
     "uuid": "^7.0.3",
@@ -15,6 +24,6 @@
     "@types/firefox-webext-browser": "^70.0.1"
   },
   "scripts": {
-    "package": "zip -r webdav.zip manifest.json _locales scripts icons style.css window.html node_modules/webextension-polyfill/dist/browser-polyfill.js* node_modules/uuid/dist/umd/uuidv1.min.js node_modules/webdav/web/index.js"
+    "package": "zip -r ext.zip manifest.json _locales scripts icons style.css window.html node_modules/webextension-polyfill/dist/browser-polyfill.js* node_modules/uuid/dist/umd/uuidv1.min.js node_modules/webdav/web/index.js"
   }
 }

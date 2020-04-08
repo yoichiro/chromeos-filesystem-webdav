@@ -1,14 +1,14 @@
 {
   "appName": {
-    "message": "WebDAV File System",
+    "message": "Nextcloud (unofficial)",
     "description": "The name of the application"
   },
   "appDescription": {
-    "message": "Access a WebDAV server directly from the Files app.",
+    "message": "Access Nextcloud/ownCloud server directly from the Files app.",
     "description": "The description of the application"
   },
   "shortName": {
-    "message": "WebDAV",
+    "message": "Nextcloud",
     "description": "The short name of the application"
   },
   "mountHeader": {

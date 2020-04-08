@@ -4,34 +4,33 @@
   "short_name": "__MSG_shortName__",
   "description": "__MSG_appDescription__",
   "version": "2.0.0",
+  "author": "Yuto Tokunaga <yuntan.sub1@gmail.com",
+  "homepage_url": "https://github.com/yuntan/chromeos-filesystem-nextcloud",
   "default_locale": "en",
   "permissions": [
     "fileSystemProvider",
     "storage",
-    "notifications",
     "https://*/"
   ],
-  "app": {
-    "background": {
-      "scripts": [
-        "node_modules/webextension-polyfill/dist/browser-polyfill.js",
-        "node_modules/uuid/dist/umd/uuidv1.min.js",
-        "node_modules/webdav/web/index.js",
-        "scripts/metadata_cache.js",
-        "scripts/webdav_fs.js",
-        "scripts/background.js"
-      ]
-    }
+  "background": {
+    "persistent": false,
+    "scripts": [
+      "node_modules/webextension-polyfill/dist/browser-polyfill.js",
+      "node_modules/uuid/dist/umd/uuidv1.min.js",
+      "node_modules/webdav/web/index.js",
+      "scripts/metadata_cache.js",
+      "scripts/webdav_fs.js",
+      "scripts/background.js"
+    ]
   },
   "icons": {
-    "16": "icons/16.png",
-    "32": "icons/32.png",
-    "48": "icons/48.png",
-    "128": "icons/128.png"
+    "16": "icons/16x16.png",
+    "32": "icons/32x32.png",
+    "48": "icons/48x48.png",
+    "128": "icons/128x128.png"
   },
   "file_system_provider_capabilities": {
     "source": "network",
     "multiple_mounts": true
-  },
-  "minimum_chrome_version": "42"
+  }
 }
