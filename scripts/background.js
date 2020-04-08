@@ -28,5 +28,5 @@
 
   browser.runtime.onMessage.addListener(mount);
 
-  fs.resumeMounts();
+  // fs.resumeMounts(); // for debug
 })();
