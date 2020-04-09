@@ -8,13 +8,13 @@
 
   const fs = new WebDAVFS();
 
-  function openWindow() {
-    browser.app.window.create("window.html", {
-      outerBounds: {
-        width: 800,
-        height: 470
-      },
-      resizable: false
+  async function openWindow() {
+    const window = await browser.windows.create({
+      url: 'window.html',
+      type: 'popup',
+    });
+    await browser.windows.update(window.id, {
+      width: 400, height: 300,
     });
   }
 
