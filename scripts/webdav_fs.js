@@ -104,28 +104,20 @@
       console.log(`WebDAVFS.onOpenFileRequested: requestId=${requestId}, filePath='${filePath}', mode=${mode}`);
       console.debug(options);
 
-      const uuid = uuidv1();
-      if (mode === 'WRITE') {
-        // Nextcloud Chunking file upload
-        // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
-        const client = this.#webDAVClientMap[fileSystemId];
-        await client.createDirectory('/' + uuid);
-      }
+      const buffer = new ArrayBuffer(0);
 
-      this.#openedFilesMap[requestId] = { filePath, mode, uuid };
+      this.#openedFilesMap[requestId] = { filePath, mode, buffer };
     }
 
     async onCloseFileRequested(options) {
       const { fileSystemId, openRequestId } = options;
-      const { filePath, mode, uuid } = this.#openedFilesMap[openRequestId];
+      const { filePath, mode, buffer } = this.#openedFilesMap[openRequestId];
       console.log(`WebDAVFS.onCloseFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', mode=${mode}`);
 
 
       if (mode === 'WRITE') {
-        // Nextcloud Chunking file upload
-        // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
         const client = this.#webDAVClientMap[fileSystemId];
-        await client.moveFile(`/${uuid}/.file`, filePath);
+        await client.putFileContents(filePath, buffer);
       }
 
       delete this.#openedFilesMap[openRequestId];
@@ -155,6 +147,17 @@
       const buffer = await response.arrayBuffer();
       const hasMore = false;
       return [buffer, hasMore];
+    }
+
+    async onWriteFileRequested(options) {
+      const { openRequestId, offset, data } = options;
+      const { filePath, buffer } = this.#openedFilesMap[openRequestId];
+      console.log(`WebDAVFS.onWriteFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', offset=${offset}, data.byteLength=${data.byteLength}`);
+
+      const typed = new Uint8Array(new ArrayBuffer(offset + data.byteLength));
+      typed.set(new Uint8Array(buffer));
+      typed.set(new Uint8Array(data), offset);
+      this.#openedFilesMap[openRequestId].buffer = typed.buffer;
     }
 
     async onCreateDirectoryRequested(options) {
@@ -219,23 +222,6 @@
       const client = this.#webDAVClientMap[fileSystemId];
       const buffer = await client.getFileContents(filePath);
       await client.putFileContents(buffer.slice(0, length));
-    }
-
-    async onWriteFileRequested(options) {
-      const { fileSystemId, openRequestId, offset, data } = options;
-      const { filePath } = this.#openedFilesMap[openRequestId];
-      console.log(`WebDAVFS.onWriteFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', offset=${offset}, data.byteLength=${data.byteLength}`);
-
-      const { uuid } = this.#openedFilesMap[openRequestId];
-      const client = this.#webDAVClientMap[fileSystemId];
-
-      // Nextcloud Chunking file upload
-      // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
-      const end = offset + data.byteLength;
-      const uploadPath = `/${uuid}/${paddedIndex(offset)}-${paddedIndex(end)}`;
-
-      console.log(`WebDAVFS.onWriteFileRequested: uploadPath: ${uploadPath}`);
-      await client.putFileContents(uploadPath, data);
     }
 
     async onAbortRequested(options) {
