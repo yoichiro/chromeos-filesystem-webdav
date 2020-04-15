@@ -24,6 +24,10 @@
     await fs.mount(request);
   }
 
+  browser.runtime.onInstalled.addListener(async () => {
+    await browser.storage.local.set({ version: 'v1' });
+  });
+
   browser.fileSystemProvider.onMountRequested.addListener(openWindow);
 
   browser.runtime.onMessage.addListener(mount);
