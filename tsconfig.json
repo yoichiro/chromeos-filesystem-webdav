@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    "strict": true,
+    "rootDir": "scripts",
+    "outDir": "dist"
+  },
+  "exclude": ["node_modules"]
+}

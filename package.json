@@ -21,9 +21,14 @@
     "webextension-polyfill": "^0.6.0"
   },
   "devDependencies": {
-    "@types/firefox-webext-browser": "^70.0.1"
+    "@types/chrome": "0.0.104",
+    "@types/firefox-webext-browser": "^70.0.1",
+    "ts-loader": "^7.0.0",
+    "typescript": "^3.8.3",
+    "webpack": "^4.42.1",
+    "webpack-cli": "^3.3.11"
   },
   "scripts": {
-    "package": "zip -r ext.zip manifest.json _locales scripts icons style.css window.html node_modules/webextension-polyfill/dist/browser-polyfill.js* node_modules/uuid/dist/umd/uuidv1.min.js node_modules/webdav/web/index.js"
+    "package": "zip -r ext.zip manifest.json _locales scripts icons style.css window.html node_modules/webextension-polyfill/dist/browser-polyfill.js node_modules/uuid/dist/umd/uuidv1.min.js node_modules/webdav/web/index.js"
   }
 }
