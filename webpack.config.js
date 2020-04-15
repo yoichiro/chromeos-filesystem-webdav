@@ -2,7 +2,7 @@ const path = require('path');
 
 module.exports = {
   mode: 'production',
-  entry: './scripts/background.ts',
+  entry: './src/background.ts',
   module: {
     rules: [
       {
