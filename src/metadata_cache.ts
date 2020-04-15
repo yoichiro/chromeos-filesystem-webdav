@@ -62,5 +62,3 @@ export default class MetadataCache {
     }
   }
 }
-
-// window.MetadataCache = MetadataCache;

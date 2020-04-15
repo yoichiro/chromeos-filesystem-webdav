@@ -1,9 +1,5 @@
+import { createClient, Client } from 'webdav/web';
 import MetadataCache from './metadata_cache';
-
-declare namespace WebDAV {
-  type Client = any;
-  function createClient(url: string, options: { username: string, password: string }): Client;
-}
 
 interface Credential {
   name: string
@@ -19,7 +15,7 @@ interface OpenedFileProps {
 }
 
 export default class WebDAVFS {
-  #webDAVClientMap: { [fileSystemId: string]: WebDAV.Client } = {};
+  #webDAVClientMap: { [fileSystemId: string]: Client } = {};
   #openedFilesMap: { [openRequestId: string]: OpenedFileProps } = {};
   #metadataCacheMap: { [fileSystemId: string]: MetadataCache } = {};
 
@@ -41,7 +37,7 @@ export default class WebDAVFS {
     const { name, url, username, password } = credential;
     if (await this.isMounted(url, username)) return;
 
-    const client = WebDAV.createClient(url, { username, password });
+    const client = createClient(url, { username, password });
     await client.getDirectoryContents('/'); // connect and authenticate
 
     const fileSystemId = createFileSystemID(url, username);
@@ -291,7 +287,7 @@ export default class WebDAVFS {
     console.log('WebDAVFS.resume');
 
     for (const { url, username, password } of await getMountedCredentials()) {
-      const client = WebDAV.createClient(url, { username, password });
+      const client = createClient(url, { username, password });
 
       const fileSystemId = createFileSystemID(url, username);
       this.#webDAVClientMap[fileSystemId] = client;
@@ -345,5 +341,3 @@ function canonicalizedMetadata(
   }
   return _metadata;
 }
-
-// window.WebDAVFS = WebDAVFS;
