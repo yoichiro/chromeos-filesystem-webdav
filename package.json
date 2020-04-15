@@ -1,6 +1,6 @@
 {
   "name": "chromeos-filesystem-nextcloud",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Nextcloud file system provider for Chrome OS",
   "homepage": "https://github.com/yuntan/chromeos-filesystem-nextcloud",
   "bugs": {
