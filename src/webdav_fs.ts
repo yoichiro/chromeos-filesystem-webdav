@@ -1,23 +1,36 @@
 import { createClient, Client } from 'webdav/web';
+import { v1 as uuidv1 } from 'uuid';
 import MetadataCache from './metadata_cache';
+
+type ServerType = 'nc' | 'oc'; // Nextcloud/ownCloud
+type PathConverter = (path: string) => string;
 
 interface Credential {
   name: string
-  url: string
+  domain: string
+  server: ServerType
   username: string
   password: string
+}
+
+interface FileSystemProps {
+  server: ServerType
+  client: Client
+  metadataCache: MetadataCache
+  filePathConverter: PathConverter
+  uploadPathConverter: PathConverter
 }
 
 interface OpenedFileProps {
   filePath: string
   mode: string
+  uuid: string
   buffer: ArrayBuffer
 }
 
 export default class WebDAVFS {
-  #webDAVClientMap: { [fileSystemId: string]: Client } = {};
+  #fileSystemMap: { [fileSystemId: string]: FileSystemProps } = {};
   #openedFilesMap: { [openRequestId: string]: OpenedFileProps } = {};
-  #metadataCacheMap: { [fileSystemId: string]: MetadataCache } = {};
 
   constructor() {
     this.#assignEventHandlers();
@@ -34,26 +47,34 @@ export default class WebDAVFS {
   async mount(credential: Credential) {
     console.log('WebDAVFS.mount')
 
-    const { name, url, username, password } = credential;
-    if (await this.isMounted(url, username)) return;
+    const { name, domain, server, username, password } = credential;
+    if (await this.isMounted(domain, username)) return;
 
+    const url = `https://${domain}/remote.php/dav/`;
     const client = createClient(url, { username, password });
-    await client.getDirectoryContents('/'); // connect and authenticate
+    const metadataCache = new MetadataCache();
+    const filePathConverter: PathConverter =
+      path => `/files/${username}${path}`;
+    const uploadPathConverter: PathConverter =
+      path => `/uploads/${username}${path}`;
+    const fileSystemId = createFileSystemID(domain, username);
 
-    const fileSystemId = createFileSystemID(url, username);
+    await client.getDirectoryContents(filePathConverter('/')); // connect and authenticate
+
     await new Promise(resolve => chrome.fileSystemProvider.mount(
       { fileSystemId, displayName: name, writable: true }, resolve
     ));
 
-    this.#webDAVClientMap[fileSystemId] = client;
-    this.#metadataCacheMap[fileSystemId] = new MetadataCache();
+    this.#fileSystemMap[fileSystemId] = {
+      server, client, metadataCache, filePathConverter, uploadPathConverter,
+    };
 
     await storeMountedCredential(fileSystemId, credential);
   }
 
   async resumeMounts() {
-    for (const { name, url, username } of await getMountedCredentials()) {
-      const fileSystemId = createFileSystemID(url, username);
+    for (const { name, domain, username } of await getMountedCredentials()) {
+      const fileSystemId = createFileSystemID(domain, username);
       await new Promise(resolve => chrome.fileSystemProvider.mount(
         { fileSystemId, displayName: name, writable: true }, resolve
       ));
@@ -68,8 +89,7 @@ export default class WebDAVFS {
       chrome.fileSystemProvider.unmount(options, resolve));
 
     const { fileSystemId } = options;
-    delete this.#webDAVClientMap[fileSystemId];
-    delete this.#metadataCacheMap[fileSystemId];
+    delete this.#fileSystemMap[fileSystemId];
 
     await removeMountedCredential(fileSystemId);
   }
@@ -81,10 +101,11 @@ export default class WebDAVFS {
     console.log(`WebDAVFS.onReadDirectoryRequested: directoryPath=${directoryPath}`);
     console.debug(options);
 
-    const client = this.#webDAVClientMap[fileSystemId];
-    const stats = await client.getDirectoryContents(directoryPath) as any[];
+    const { client, metadataCache, filePathConverter } =
+      this.#fileSystemMap[fileSystemId];
+    const stats =
+      await client.getDirectoryContents(filePathConverter(directoryPath)) as any[];
     const metadataList = stats.map(fromStat);
-    const metadataCache = this.#metadataCacheMap[fileSystemId];
     metadataCache.put(directoryPath, metadataList);
     const hasMore = false;
     return [metadataList.map(metadata =>
@@ -100,13 +121,13 @@ export default class WebDAVFS {
 
     if (thumbnail) throw new Error('Thumbnail not supported');
 
-    const client = this.#webDAVClientMap[fileSystemId];
-    const metadataCache = this.#metadataCacheMap[fileSystemId];
+    const { client, metadataCache, filePathConverter } =
+      this.#fileSystemMap[fileSystemId];
     const cache = metadataCache.get(entryPath);
     if (cache.metadata && cache.directoryExists && cache.fileExists)
       return [canonicalizedMetadata(cache.metadata, options)];
 
-    const stat = await client.stat(entryPath);
+    const stat = await client.stat(filePathConverter(entryPath));
     console.debug(stat);
     return [canonicalizedMetadata(fromStat(stat), options)];
   }
@@ -114,26 +135,41 @@ export default class WebDAVFS {
   async onOpenFileRequested(
     options: chrome.fileSystemProvider.OpenFileRequestedEventOptions
   ) {
-    const { requestId, filePath, mode } = options;
+    const { fileSystemId, requestId, filePath, mode } = options;
     console.log(`WebDAVFS.onOpenFileRequested: requestId=${requestId}, filePath='${filePath}', mode=${mode}`);
     console.debug(options);
 
     const buffer = new ArrayBuffer(0);
+    const uuid = uuidv1();
+    const { server, client, uploadPathConverter } = this.#fileSystemMap[fileSystemId];
 
-    this.#openedFilesMap[requestId] = { filePath, mode, buffer };
+    if (mode === 'WRITE' && server === 'nc') {
+      // Nextcloud chunked file upload
+      // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
+      await client.createDirectory(uploadPathConverter(`/${uuid}`));
+    }
+
+    this.#openedFilesMap[requestId] = { filePath, mode, uuid, buffer };
   }
 
   async onCloseFileRequested(
     options: chrome.fileSystemProvider.OpenedFileRequestedEventOptions
   ) {
     const { fileSystemId, openRequestId } = options;
-    const { filePath, mode, buffer } = this.#openedFilesMap[openRequestId];
+    const { filePath, mode, uuid, buffer } = this.#openedFilesMap[openRequestId];
     console.log(`WebDAVFS.onCloseFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', mode=${mode}`);
 
+    const { server, client, filePathConverter, uploadPathConverter } =
+      this.#fileSystemMap[fileSystemId];
 
     if (mode === 'WRITE') {
-      const client = this.#webDAVClientMap[fileSystemId];
-      await client.putFileContents(filePath, buffer);
+      if (server === 'nc') {
+        // Nextcloud chunked file upload
+        // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
+        await client.moveFile(
+          uploadPathConverter(`/${uuid}/.file`), filePathConverter(filePath)
+        );
+      } else await client.putFileContents(filePathConverter(filePath), buffer);
     }
 
     delete this.#openedFilesMap[openRequestId];
@@ -147,8 +183,8 @@ export default class WebDAVFS {
     console.log(`WebDAVFS.onReadFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', offset=${offset}, length=${length}`);
     console.debug(options);
 
-    const client = this.#webDAVClientMap[fileSystemId];
-    const url = new URL(client.getFileDownloadLink(filePath));
+    const { client, filePathConverter } = this.#fileSystemMap[fileSystemId];
+    const url = new URL(client.getFileDownloadLink(filePathConverter(filePath)));
     const url_ = url.origin + url.pathname;
 
     const { username, password } = url;
@@ -170,14 +206,27 @@ export default class WebDAVFS {
   async onWriteFileRequested(
     options: chrome.fileSystemProvider.OpenedFileIoRequestedEventOptions
   ) {
-    const { openRequestId, offset, data } = options;
-    const { filePath, buffer } = this.#openedFilesMap[openRequestId];
+    const { fileSystemId, openRequestId, offset, data } = options;
+    const { filePath, uuid, buffer } = this.#openedFilesMap[openRequestId];
     console.log(`WebDAVFS.onWriteFileRequested: openRequestId=${openRequestId}, filePath='${filePath}', offset=${offset}, data.byteLength=${data.byteLength}`);
 
-    const typed = new Uint8Array(new ArrayBuffer(offset + data.byteLength));
-    typed.set(new Uint8Array(buffer));
-    typed.set(new Uint8Array(data), offset);
-    this.#openedFilesMap[openRequestId].buffer = typed.buffer;
+    const { server, client, uploadPathConverter } =
+      this.#fileSystemMap[fileSystemId];
+
+    if (server === 'nc') {
+      // Nextcloud chunked file upload
+      // https://docs.nextcloud.com/server/15/developer_manual/client_apis/WebDAV/chunking.html
+      const end = offset + data.byteLength - 1;
+      const uploadPath = `/${uuid}/${paddedIndex(offset)}-${paddedIndex(end)}`;
+
+      console.log(`WebDAVFS.onWriteFileRequested: uploadPath: ${uploadPath}`);
+      await client.putFileContents(uploadPathConverter(uploadPath), data);
+    } else {
+      const typed = new Uint8Array(new ArrayBuffer(offset + data.byteLength));
+      typed.set(new Uint8Array(buffer));
+      typed.set(new Uint8Array(data), offset);
+      this.#openedFilesMap[openRequestId].buffer = typed.buffer;
+    }
   }
 
   async onCreateDirectoryRequested(
@@ -187,8 +236,10 @@ export default class WebDAVFS {
     console.log(`WebDAVFS.onCreateDirectoryRequested: directoryPath=${directoryPath}`);
     console.debug(options);
 
-    const client = this.#webDAVClientMap[fileSystemId];
+    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
     await client.createDirectory(directoryPath);
+
+    metadataCache.remove(directoryPath);
   }
 
   async onDeleteEntryRequested(
@@ -197,10 +248,9 @@ export default class WebDAVFS {
     const { fileSystemId, entryPath } = options;
     console.log(`WebDAVFS.onDeleteEntryRequested: entryPath=${entryPath}`);
 
-    const client = this.#webDAVClientMap[fileSystemId];
+    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
     client.deleteFile(entryPath);
 
-    const metadataCache = this.#metadataCacheMap[fileSystemId];
     metadataCache.remove(entryPath);
   }
 
@@ -210,10 +260,9 @@ export default class WebDAVFS {
     const { fileSystemId, filePath } = options;
     console.log(`WebDAVFS.onCreateFileRequested: filePath=${filePath}`);
 
-    const client = this.#webDAVClientMap[fileSystemId];
+    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
     await client.putFileContents(filePath, new ArrayBuffer(0));
 
-    const metadataCache = this.#metadataCacheMap[fileSystemId];
     metadataCache.remove(filePath);
   }
 
@@ -223,10 +272,9 @@ export default class WebDAVFS {
     const { fileSystemId, sourcePath, targetPath } = options;
     console.log(`WebDAVFS.onCopyEntryRequested: sourcePath=${sourcePath}, targetPath=${targetPath}`);
 
-    const client = this.#webDAVClientMap[fileSystemId];
+    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
     await client.copyFile(sourcePath, targetPath);
 
-    const metadataCache = this.#metadataCacheMap[fileSystemId];
     metadataCache.remove(sourcePath);
     metadataCache.remove(targetPath);
   }
@@ -237,10 +285,9 @@ export default class WebDAVFS {
     const { fileSystemId, sourcePath, targetPath } = options;
     console.log(`WebDAVFS.onMoveEntryRequested: sourcePath=${sourcePath}, targetPath=${targetPath}`);
 
-    const client = this.#webDAVClientMap[fileSystemId];
+    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
     await client.moveFile(sourcePath, targetPath);
 
-    const metadataCache = this.#metadataCacheMap[fileSystemId];
     metadataCache.remove(sourcePath);
     metadataCache.remove(targetPath);
   }
@@ -251,7 +298,7 @@ export default class WebDAVFS {
     const { fileSystemId, filePath, length } = options;
     console.log(`WebDAVFS.onTruncateRequested: filePath=${filePath}, length=${length}`);
 
-    const client = this.#webDAVClientMap[fileSystemId];
+    const { client } = this.#fileSystemMap[fileSystemId];
     const buffer = await client.getFileContents(filePath);
     await client.putFileContents(buffer.slice(0, length));
   }
@@ -286,12 +333,13 @@ export default class WebDAVFS {
   #resume = async () => {
     console.log('WebDAVFS.resume');
 
-    for (const { url, username, password } of await getMountedCredentials()) {
+    for (const { domain, username, password } of await getMountedCredentials()) {
+      const url = `https://${domain}/remote.php/dav/`;
       const client = createClient(url, { username, password });
 
       const fileSystemId = createFileSystemID(url, username);
-      this.#webDAVClientMap[fileSystemId] = client;
-      this.#metadataCacheMap[fileSystemId] = new MetadataCache();
+      this.#fileSystemMap[fileSystemId].client = client;
+      this.#fileSystemMap[fileSystemId].metadataCache = new MetadataCache();
     }
   };
 }
@@ -340,4 +388,11 @@ function canonicalizedMetadata(
     if (!options[key]) delete _metadata[key];
   }
   return _metadata;
+}
+
+function paddedIndex(index: number) {
+  const padding = '000000000000000';
+  const length = padding.length;
+
+  return (padding + String(index)).slice(-length);
 }

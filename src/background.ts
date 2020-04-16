@@ -27,7 +27,7 @@ import WebDAVFS from './webdav_fs';
   }
 
   browser.runtime.onInstalled.addListener(async () => {
-    await browser.storage.local.set({ version: 'v1' });
+    await browser.storage.local.set({ version: 1 });
   });
 
   browser.runtime.onMessage.addListener(mount);
