@@ -27,7 +27,29 @@ import WebDAVFS from './webdav_fs';
   }
 
   browser.runtime.onInstalled.addListener(async () => {
-    await browser.storage.local.set({ version: 1 });
+    const VERSION = 2;
+    const { version } = await browser.storage.local.get();
+    if (version === VERSION) return;
+    else if (version === undefined) {
+      await browser.storage.local.set({ version: VERSION });
+      return;
+    }
+
+    // clear storage
+    await browser.storage.local.set({ version: 2, mountedCredentials: {} });
+
+    // unmount all filesystems
+    const infos: chrome.fileSystemProvider.FileSystemInfo[] =
+      await new Promise(resolve => {
+        chrome.fileSystemProvider.getAll(resolve);
+      });
+    for (const { fileSystemId } of infos) {
+      await new Promise(resolve => {
+        chrome.fileSystemProvider.unmount({ fileSystemId }, resolve);
+      });
+    }
+
+    await openWindow();
   });
 
   browser.runtime.onMessage.addListener(mount);
