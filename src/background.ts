@@ -20,8 +20,8 @@ import WebDAVFS from './webdav_fs';
   }
 
   async function mount(request: any) {
-    const { url, username } = request;
-    const mounted = await fs.isMounted(url, username);
+    const { domain, username } = request;
+    const mounted = await fs.isMounted(domain, username);
     if (mounted) throw new Error('Already mounted');
     await fs.mount(request);
   }

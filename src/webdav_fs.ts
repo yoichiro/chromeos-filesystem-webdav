@@ -37,11 +37,13 @@ export default class WebDAVFS {
     this.#resume();
   }
 
-  async isMounted(url: string, username: string) {
-    const fileSystemId = createFileSystemID(url, username);
-    return await new Promise(resolve => {
-      chrome.fileSystemProvider.get(fileSystemId, resolve);
-    }) ? true : false;
+  async isMounted(domain: string, username: string) {
+    const fileSystemId = createFileSystemID(domain, username);
+    const fileSystems: chrome.fileSystemProvider.FileSystemInfo[] =
+      await new Promise(resolve => {
+        chrome.fileSystemProvider.getAll(resolve);
+      });
+    return !! fileSystems.find(info => info.fileSystemId === fileSystemId);
   }
 
   async mount(credential: Credential) {
@@ -365,8 +367,8 @@ async function getMountedCredentials(): Promise<Credential[]> {
   return Object.values(mountedCredentials || {});
 }
 
-function createFileSystemID(url: string, username: string) {
-  return `webdavfs://${username}/${url}`;
+function createFileSystemID(domain: string, username: string) {
+  return `webdavfs://${domain}/${username}`;
 }
 
 function fromStat(stat: any): chrome.fileSystemProvider.EntryMetadata {
