@@ -1,8 +1,9 @@
 const path = require('path');
 
 module.exports = {
-  mode: 'production',
+  mode: 'development',
   entry: './src/background.ts',
+  devtool: 'inline-source-map',
   module: {
     rules: [
       {
