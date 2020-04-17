@@ -49,27 +49,19 @@ export default class WebDAVFS {
   async mount(credential: Credential) {
     console.log('WebDAVFS.mount')
 
-    const { name, domain, server, username, password } = credential;
+    const { name, domain, username } = credential;
     if (await this.isMounted(domain, username)) return;
 
-    const url = `https://${domain}/remote.php/dav/`;
-    const client = createClient(url, { username, password });
-    const metadataCache = new MetadataCache();
-    const filePathConverter: PathConverter =
-      path => `/files/${username}${path}`;
-    const uploadPathConverter: PathConverter =
-      path => `/uploads/${username}${path}`;
-    const fileSystemId = createFileSystemID(domain, username);
-
+    const props = this.#getFileSystemProps(credential);
+    const { client, filePathConverter } = props;
     await client.getDirectoryContents(filePathConverter('/')); // connect and authenticate
 
+    const fileSystemId = createFileSystemID(domain, username);
     await new Promise(resolve => chrome.fileSystemProvider.mount(
       { fileSystemId, displayName: name, writable: true }, resolve
     ));
 
-    this.#fileSystemMap[fileSystemId] = {
-      server, client, metadataCache, filePathConverter, uploadPathConverter,
-    };
+    this.#fileSystemMap[fileSystemId] = props;
 
     await storeMountedCredential(fileSystemId, credential);
   }
@@ -335,14 +327,27 @@ export default class WebDAVFS {
   #resume = async () => {
     console.log('WebDAVFS.resume');
 
-    for (const { domain, username, password } of await getMountedCredentials()) {
-      const url = `https://${domain}/remote.php/dav/`;
-      const client = createClient(url, { username, password });
-
-      const fileSystemId = createFileSystemID(url, username);
-      this.#fileSystemMap[fileSystemId].client = client;
-      this.#fileSystemMap[fileSystemId].metadataCache = new MetadataCache();
+    for (const credential of await getMountedCredentials()) {
+      const { domain, username } = credential;
+      const fileSystemId = createFileSystemID(domain, username);
+      this.#fileSystemMap[fileSystemId] = this.#getFileSystemProps(credential);
     }
+  };
+
+  #getFileSystemProps = (credential: Credential) => {
+    const { domain, server, username, password } = credential;
+
+    const url = `https://${domain}/remote.php/dav/`;
+    const client = createClient(url, { username, password });
+    const metadataCache = new MetadataCache();
+    const filePathConverter: PathConverter =
+      path => `/files/${username}${path}`;
+    const uploadPathConverter: PathConverter =
+      path => `/uploads/${username}${path}`;
+
+    return {
+      server, client, metadataCache, filePathConverter, uploadPathConverter,
+    };
   };
 }
 
