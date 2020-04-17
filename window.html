@@ -2,48 +2,62 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Nextcloud</title>
+  <title>Login to Nextcloud</title>
 
   <link rel="stylesheet" href="style.css">
-  <script type="module" src="node_modules/webextension-polyfill/dist/browser-polyfill.js"></script>
 </head>
 <body>
-  <h1>Nextcloud</h1>
+  <h1>Login to Nextcloud</h1>
 
   <table>
     <tbody>
       <tr>
-        <th>Name</th>
+        <th>
+          <label for="name">Name</label>
+        </th>
         <td>
           <input id="name" type="text" value="Nextcloud">
         </td>
       </tr>
       <tr>
-        <th>WebDAV URL</th>
+        <th>
+          <label for="domain">Server domain</label>
+        </th>
         <td>
-          <input id="url" type="text">
-        </td>
-      </tr>
-      <tr>
-        <th>Username</th>
-        <td>
-          <input id="username" type="text">
-        </td>
-      </tr>
-      <tr>
-        <th>Password</th>
-        <td>
-          <input id="password" type="password">
+          <input id="domain" type="text" placeholder="cloud.example.com">
         </td>
       </tr>
     </tbody>
   </table>
 
+  <details id="expander">
+    <summary> Use username and password (ownCloud) </summary>
+    <table>
+      <tbody>
+        <tr>
+          <th>
+            <label for="username">Username</label></th>
+          <td>
+            <input id="username" type="text">
+          </td>
+        </tr>
+        <tr>
+          <th>
+            <label for="password">Password</label></th>
+          <td>
+            <input id="password" type="password">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+
   <div>
     <span id="message"></span>
-    <button id="btnOk">Mount</button>
+    <button id="btnOk">Login</button>
   </div>
 
-  <script type="text/javascript" src="scripts/window.js"></script>
+  <script type="module" src="node_modules/webextension-polyfill/dist/browser-polyfill.js"></script>
+  <script type="text/javascript" src="window.js"></script>
 </body>
 </html>

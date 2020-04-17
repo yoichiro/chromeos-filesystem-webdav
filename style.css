@@ -10,3 +10,8 @@ th {
   padding-right: 12px;
   text-align: right;
 }
+
+#btnOk {
+  position: relative;
+  right: 6px;
+}
