@@ -12,9 +12,9 @@ async function ncLoginFlow(domain) {
   return await new Promise(resolve => {
     // polling
     const id = setInterval(async () => {
-      const params = new URLSearchParams();
-      params.append('token', token);
-      const response = await fetch(endpoint, { method: 'POST', body: params });
+      const body = new URLSearchParams();
+      body.append('token', token);
+      const response = await fetch(endpoint, { method: 'POST', body });
       if (response.ok) {
         const { loginName: username, appPassword: password } = await response.json();
         clearInterval(id);
