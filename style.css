@@ -2,16 +2,30 @@
   box-sizing: border-box;
 }
 
+body {
+  padding: 0 12px;
+}
+
 table {
-  margin: 12px;
+  margin: 12px 0;
 }
 
 th {
+  width: 120px;
   padding-right: 12px;
   text-align: right;
 }
 
-#btnOk {
+td input {
+  width: 180px;
+}
+
+.row {
   position: relative;
-  right: 6px;
+  margin-top: 12px;
+}
+
+#btnOk {
+  position: absolute;
+  right: 12px;
 }
