@@ -18,7 +18,7 @@ async function ncLoginFlow(domain) {
       if (response.ok) {
         const { loginName: username, appPassword: password } = await response.json();
         clearInterval(id);
-        resolve({ server: 'nc', username, password });
+        resolve({ server: 'nc', username, password, token });
       }
     }, 1000);
   });
@@ -32,6 +32,11 @@ document.querySelector('#btnOk').addEventListener('click', async ev => {
   const domain = document.querySelector("#domain").value;
   const username = document.querySelector("#username").value;
   const password = document.querySelector("#password").value;
+
+  const granted = await browser.permissions.request({
+    origins: [`https://${domain}/`]
+  });
+  if (!granted) return;
 
   const request = { server: 'oc', name, domain, username, password };
 

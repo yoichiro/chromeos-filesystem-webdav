@@ -9,7 +9,9 @@
   "default_locale": "en",
   "permissions": [
     "fileSystemProvider",
-    "storage",
+    "storage"
+  ],
+  "optional_permissions": [
     "https://*/"
   ],
   "background": {
