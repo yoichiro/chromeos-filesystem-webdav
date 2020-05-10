@@ -6,7 +6,7 @@ async function registerProxy(host) {
 }
 
 async function ncLoginFlow(domain) {
-  // await registerProxy(domain);
+  await registerProxy(domain);
 
   // Nextcloud Login flow v2
   // https://docs.nextcloud.com/server/latest/developer_manual/client_apis/LoginFlow/index.html#login-flow-v2
