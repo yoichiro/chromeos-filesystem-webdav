@@ -9,13 +9,13 @@
   "default_locale": "en",
   "permissions": [
     "fileSystemProvider",
-    "storage"
+    "storage",
+    "webRequest", "webRequestBlocking"
   ],
   "optional_permissions": [
     "https://*/"
   ],
   "background": {
-    "persistent": false,
     "scripts": [
       "node_modules/webextension-polyfill/dist/browser-polyfill.js",
       "dist/background.js"

@@ -1,3 +1,4 @@
+import Proxy from './proxy';
 import WebDAVFS from './webdav_fs';
 
 (() => {
@@ -6,7 +7,8 @@ import WebDAVFS from './webdav_fs';
     return;
   }
 
-  const fs = new WebDAVFS();
+  const proxy = new Proxy();
+  const fs = new WebDAVFS(proxy);
 
   async function openWindow() {
     const window = await browser.windows.create({
@@ -52,7 +54,15 @@ import WebDAVFS from './webdav_fs';
     await openWindow();
   });
 
-  browser.runtime.onMessage.addListener(mount);
+  browser.runtime.onMessage.addListener(async msg => {
+    const [action, options] = msg;
+    if (action === 'mount') {
+      await mount(options)
+    } else if (action === 'registerProxy') {
+      const { host } = options;
+      await proxy.register(host);
+    }
+  });
 
   chrome.fileSystemProvider.onMountRequested.addListener(openWindow);
 

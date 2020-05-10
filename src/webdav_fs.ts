@@ -1,6 +1,8 @@
 import { createClient, Client } from 'webdav/web';
 import { v1 as uuidv1 } from 'uuid';
+
 import MetadataCache from './metadata_cache';
+import Proxy from './proxy';
 
 type ServerType = 'nc' | 'oc'; // Nextcloud/ownCloud
 type PathConverter = (path: string) => string;
@@ -29,10 +31,12 @@ interface OpenedFileProps {
 }
 
 export default class WebDAVFS {
+  #proxy: Proxy;
   #fileSystemMap: { [fileSystemId: string]: FileSystemProps } = {};
   #openedFilesMap: { [openRequestId: string]: OpenedFileProps } = {};
 
-  constructor() {
+  constructor(proxy: Proxy) {
+    this.#proxy = proxy;
     this.#assignEventHandlers();
     this.#resume();
   }
@@ -52,9 +56,12 @@ export default class WebDAVFS {
     const { name, domain, username } = credential;
     if (await this.isMounted(domain, username)) return;
 
+    this.#proxy.register(domain);
+
     const props = this.#getFileSystemProps(credential);
     const { client, filePathConverter } = props;
-    await client.getDirectoryContents(filePathConverter('/')); // connect and authenticate
+    // test connection and authentication
+    await client.getDirectoryContents(filePathConverter('/'));
 
     const fileSystemId = createFileSystemID(domain, username);
     await new Promise(resolve => chrome.fileSystemProvider.mount(
@@ -331,6 +338,7 @@ export default class WebDAVFS {
       const { domain, username } = credential;
       const fileSystemId = createFileSystemID(domain, username);
       this.#fileSystemMap[fileSystemId] = this.#getFileSystemProps(credential);
+      this.#proxy.register(domain);
     }
   };
 

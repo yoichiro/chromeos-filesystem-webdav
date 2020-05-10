@@ -1,6 +1,13 @@
 'use strict';
 
+// modify User-Agent
+async function registerProxy(host) {
+  await browser.runtime.sendMessage(['registerProxy', { host }]);
+}
+
 async function ncLoginFlow(domain) {
+  // await registerProxy(domain);
+
   // Nextcloud Login flow v2
   // https://docs.nextcloud.com/server/latest/developer_manual/client_apis/LoginFlow/index.html#login-flow-v2
   const url = `https://${domain}/index.php/login/v2`;
@@ -18,7 +25,7 @@ async function ncLoginFlow(domain) {
       if (response.ok) {
         const { loginName: username, appPassword: password } = await response.json();
         clearInterval(id);
-        resolve({ server: 'nc', username, password, token });
+        resolve({ server: 'nc', username, password });
       }
     }, 1000);
   });
@@ -48,7 +55,7 @@ document.querySelector('#btnOk').addEventListener('click', async ev => {
   const message = document.querySelector('#message');
   message.innerText = 'Mounting...';
 
-  await browser.runtime.sendMessage(request)
+  await browser.runtime.sendMessage(['mount', request])
     .then(window.close)
     .catch(error => {
       console.error(error);
