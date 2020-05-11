@@ -31,6 +31,6 @@
   },
   "scripts": {
     "build": "webpack --config webpack.dev.js",
-    "package": "webpack --config webpack.prod.js && zip -r ext.zip manifest.json _locales dist icons window.js window.html style.css node_modules/webextension-polyfill/dist/browser-polyfill.js"
+    "package": "webpack --config webpack.prod.js && rm -f ext.zip; zip -r ext.zip manifest.json _locales dist icons window.js window.html style.css node_modules/webextension-polyfill/dist/browser-polyfill.js"
   }
 }
