@@ -188,8 +188,7 @@ export default class WebDAVFS {
     const url = new URL(client.getFileDownloadLink(filePathConverter(filePath)));
     const url_ = url.origin + url.pathname;
 
-    const { username, password } = url;
-    const credential = `${username}:${password}`;
+    const credential = [url.username, url.password].map(decodeURIComponent).join(':');
 
     const headers = new Headers();
     headers.set('Authorization', `Basic ${btoa(credential)}`);
