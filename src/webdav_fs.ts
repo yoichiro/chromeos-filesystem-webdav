@@ -236,8 +236,8 @@ export default class WebDAVFS {
     console.log(`WebDAVFS.onCreateDirectoryRequested: directoryPath=${directoryPath}`);
     console.debug(options);
 
-    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
-    await client.createDirectory(directoryPath);
+    const { client, metadataCache, filePathConverter } = this.#fileSystemMap[fileSystemId];
+    await client.createDirectory(filePathConverter(directoryPath));
 
     metadataCache.remove(directoryPath);
   }
@@ -248,8 +248,8 @@ export default class WebDAVFS {
     const { fileSystemId, entryPath } = options;
     console.log(`WebDAVFS.onDeleteEntryRequested: entryPath=${entryPath}`);
 
-    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
-    client.deleteFile(entryPath);
+    const { client, metadataCache, filePathConverter } = this.#fileSystemMap[fileSystemId];
+    client.deleteFile(filePathConverter(entryPath));
 
     metadataCache.remove(entryPath);
   }
@@ -260,8 +260,9 @@ export default class WebDAVFS {
     const { fileSystemId, filePath } = options;
     console.log(`WebDAVFS.onCreateFileRequested: filePath=${filePath}`);
 
-    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
-    await client.putFileContents(filePath, new ArrayBuffer(0));
+    const { client, metadataCache, filePathConverter } = this.#fileSystemMap[fileSystemId];
+    const data = new ArrayBuffer(0);
+    await client.putFileContents(filePathConverter(filePath), data);
 
     metadataCache.remove(filePath);
   }
@@ -272,8 +273,8 @@ export default class WebDAVFS {
     const { fileSystemId, sourcePath, targetPath } = options;
     console.log(`WebDAVFS.onCopyEntryRequested: sourcePath=${sourcePath}, targetPath=${targetPath}`);
 
-    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
-    await client.copyFile(sourcePath, targetPath);
+    const { client, metadataCache, filePathConverter } = this.#fileSystemMap[fileSystemId];
+    await client.copyFile(filePathConverter(sourcePath), filePathConverter(targetPath));
 
     metadataCache.remove(sourcePath);
     metadataCache.remove(targetPath);
@@ -285,8 +286,8 @@ export default class WebDAVFS {
     const { fileSystemId, sourcePath, targetPath } = options;
     console.log(`WebDAVFS.onMoveEntryRequested: sourcePath=${sourcePath}, targetPath=${targetPath}`);
 
-    const { client, metadataCache } = this.#fileSystemMap[fileSystemId];
-    await client.moveFile(sourcePath, targetPath);
+    const { client, metadataCache, filePathConverter } = this.#fileSystemMap[fileSystemId];
+    await client.moveFile(filePathConverter(sourcePath), filePathConverter(targetPath));
 
     metadataCache.remove(sourcePath);
     metadataCache.remove(targetPath);
@@ -295,12 +296,9 @@ export default class WebDAVFS {
   async onTruncateRequested(
     options: chrome.fileSystemProvider.FilePathLengthRequestedEventOptions
   ) {
-    const { fileSystemId, filePath, length } = options;
+    const { filePath, length } = options;
     console.log(`WebDAVFS.onTruncateRequested: filePath=${filePath}, length=${length}`);
-
-    const { client } = this.#fileSystemMap[fileSystemId];
-    const buffer = await client.getFileContents(filePath);
-    await client.putFileContents(buffer.slice(0, length));
+    // do nothing
   }
 
   async onAbortRequested(
