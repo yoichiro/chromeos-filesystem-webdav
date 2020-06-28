@@ -84,12 +84,12 @@ export default class WebDAVFS {
   }
 
   async onUnmountRequested(options: chrome.fileSystemProvider.UnmountOptions) {
-    console.log("WebDAVFS.onUnmountRequested");
-
-    await new Promise(resolve =>
-      chrome.fileSystemProvider.unmount(options, resolve));
-
     const { fileSystemId } = options;
+    console.log(`WebDAVFS.onUnmountRequested: fileSystemId=${fileSystemId}`);
+
+    await new Promise(resolve => 
+      chrome.fileSystemProvider.unmount({ fileSystemId }, resolve));
+
     delete this.#fileSystemMap[fileSystemId];
 
     await removeMountedCredential(fileSystemId);
@@ -316,10 +316,10 @@ export default class WebDAVFS {
         (options: any, successCallback: Function, errorCallback: Function) => {
           (this as any)[name](options).then((result: void | Array<any>) => {
             successCallback(...(result || []));
-          }).catch((error: any) => {
+          }).catch((error: string | Error) => {
             if (error instanceof Error) console.error(error);
-            let reason = error instanceof String ? error : 'FAILED';
-            if (error.message === 'Request failed with status code 404')
+            let reason = typeof error === 'string' ? error : 'FAILED';
+            if ((error as Error).message === 'Request failed with status code 404')
               reason = 'NOT_FOUND';
             errorCallback(reason);
           });
