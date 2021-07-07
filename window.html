@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Login to Nextcloud</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Login to Nextcloud</h1>
+
+  <table>
+    <tbody>
+      <tr>
+        <th>
+          <label for="name">Name</label>
+        </th>
+        <td>
+          <input id="name" type="text" value="Nextcloud">
+        </td>
+      </tr>
+      <tr>
+        <th>
+          <label for="domain">Server domain</label>
+        </th>
+        <td>
+          <input id="domain" type="text" placeholder="cloud.example.com">
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <details id="expander">
+    <summary> Use username and password (ownCloud) </summary>
+    <table>
+      <tbody>
+        <tr>
+          <th>
+            <label for="username">Username</label></th>
+          <td>
+            <input id="username" type="text">
+          </td>
+        </tr>
+        <tr>
+          <th>
+            <label for="password">Password</label></th>
+          <td>
+            <input id="password" type="password">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+
+  <div class="row">
+    <span id="message"></span>
+    <button id="btnOk">Login</button>
+  </div>
+
+  <script type="module" src="node_modules/webextension-polyfill/dist/browser-polyfill.min.js"></script>
+  <script type="text/javascript" src="window.js"></script>
+</body>
+</html>
