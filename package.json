@@ -16,18 +16,16 @@
     "url": "git+https://github.com/yuntan/chromeos-filesystem-nextcloud.git"
   },
   "dependencies": {
-    "uuid": "^7.0.3",
-    "webdav": "^3.2.0",
-    "webextension-polyfill": "^0.6.0"
-  },
-  "devDependencies": {
     "@types/chrome": "0.0.104",
     "@types/firefox-webext-browser": "^70.0.1",
     "@types/uuid": "^7.0.2",
     "ts-loader": "^7.0.0",
     "typescript": "^3.8.3",
-    "webpack": "^4.42.1",
-    "webpack-cli": "^3.3.11"
+    "uuid": "^7.0.3",
+    "webdav": "^3.2.0",
+    "webextension-polyfill": "^0.6.0",
+    "webpack": "^5.68.0",
+    "webpack-cli": "^4.9.2"
   },
   "scripts": {
     "build": "webpack --config webpack.dev.js",
