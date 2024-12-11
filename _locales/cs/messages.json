@@ -1,0 +1,70 @@
+{
+  "appName": {
+    "message": "Nextcloud (neoficiální)",
+    "description": "The name of the application"
+  },
+  "appDescription": {
+    "message": "Služba Nextcloud/ownCloud úložiště pro Chrome OS",
+    "description": "The description of the application"
+  },
+  "shortName": {
+    "message": "Nextcloud",
+    "description": "The short name of the application"
+  },
+  "mountHeader": {
+    "message": "Připojit (mount) nový WebDAV server",
+    "description": "Header describing the server mount form."
+  },
+  "mount": {
+    "message": "Připojit",
+    "description": "Label for a button that triggers the mount action."
+  },
+  "keep": {
+    "message": "Ponechat",
+    "description": "Label for a button that triggers the keep action."
+  },
+  "mountAttempt": {
+    "message": "Pokus o připojení (mount) dané instance…",
+    "description": "Popup notifcation that informs the user that the system is attempting to mount a new instance with the credentials they provided."
+  },
+  "mountSuccess": {
+    "message": "Úspěšně připojeno.",
+    "description": "Popup notifcation that informs the user that the system successfully mounted a new instance with the credentials they provided."
+  },
+  "mountFail": {
+    "message": "Nepodařilo se připojit.",
+    "description": "Popup notifcation that informs the user that the system failed to mount a new instance with the credentials they provided."
+  },
+  "url": {
+    "message": "URL adresa",
+    "description": "The server's URL"
+  },
+  "authTypeNone": {
+    "message": "Žádné",
+    "description": "The authentication type: none"
+  },
+  "authTypeBasic": {
+    "message": "Základní",
+    "description": "The authentication type: Basic"
+  },
+  "authTypeDigest": {
+    "message": "Otisk",
+    "description": "The authentication type: Digest"
+  },
+  "username": {
+    "message": "Uživatelské jméno",
+    "description": "The user name"
+  },
+  "password": {
+    "message": "Heslo",
+    "description": "The user password"
+  },
+  "keepPasswordYes": {
+    "message": "Ano",
+    "description": "Keep password"
+  },
+  "keepPasswordNo": {
+    "message": "Ne",
+    "description": "Don't keep password"
+  }
+}
